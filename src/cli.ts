@@ -202,10 +202,16 @@ async function runSessionGet(args: string[]): Promise<void> {
 
 async function runSend(args: string[]): Promise<void> {
   const model = readFlag(args, "--model");
-  const positionalArgs = stripFlags(args, "--model");
+  const createIfMissing = args.includes("--create-if-missing");
+  const positionalArgs = stripSwitch(stripFlags(args, "--model"), "--create-if-missing");
   const sessionId = requireArg(positionalArgs[0], "session id");
   const text = requireArg(positionalArgs.slice(1).join(" "), "message text");
-  const session = await ensureLiveSession(sessionId);
+  const session = createIfMissing
+    ? await resolveSessionSelection({
+        sessionId,
+        createIfMissing: true,
+      })
+    : await ensureLiveSession(sessionId);
   await runJson("POST", `/sessions/${encodeURIComponent(session.id)}/messages`, {
     text,
     ...(model ? { model } : {}),
@@ -284,6 +290,7 @@ async function runAsk(args: string[]): Promise<void> {
   const requestedSessionId = readFlag(args, "--session-id");
   const selectedSessionId = readFlag(args, "--session");
   const useLast = args.includes("--last");
+  const createIfMissing = args.includes("--create-if-missing");
   const showThinking = readFlag(args, "--thinking") !== "off";
 
   if (selectedSessionId && useLast) {
@@ -297,7 +304,10 @@ async function runAsk(args: string[]): Promise<void> {
   }
 
   const positionalArgs = stripSwitch(
-    stripFlags(args, "--workspace", "--model", "--session-id", "--session", "--thinking"),
+    stripSwitch(
+      stripFlags(args, "--workspace", "--model", "--session-id", "--session", "--thinking"),
+      "--create-if-missing",
+    ),
     "--last",
   );
   const text = requireArg(positionalArgs.join(" "), "message text");
@@ -308,6 +318,8 @@ async function runAsk(args: string[]): Promise<void> {
       sessionId: selectedSessionId,
       useLast,
       workspacePath,
+      requestedModel,
+      createIfMissing,
     });
     requestedModel = requestedModel ?? session.requestedModel;
   } else {
@@ -330,6 +342,7 @@ async function runChat(args: string[]): Promise<void> {
   const requestedSessionId = readFlag(args, "--session-id");
   const selectedSessionId = readFlag(args, "--session");
   const useLast = args.includes("--last");
+  const createIfMissing = args.includes("--create-if-missing");
   const showThinking = readFlag(args, "--thinking") !== "off";
 
   if (selectedSessionId && useLast) {
@@ -348,6 +361,8 @@ async function runChat(args: string[]): Promise<void> {
       sessionId: selectedSessionId,
       useLast,
       workspacePath,
+      requestedModel,
+      createIfMissing,
     });
     currentSessionId = session.id;
     requestedModel = requestedModel ?? session.requestedModel;
@@ -368,7 +383,11 @@ async function runResume(args: string[]): Promise<void> {
   let requestedModel = readFlag(args, "--model");
   const showThinking = readFlag(args, "--thinking") !== "off";
   const useLast = args.includes("--last");
-  const positionalArgs = stripSwitch(stripFlags(args, "--workspace", "--model", "--thinking"), "--last");
+  const createIfMissing = args.includes("--create-if-missing");
+  const positionalArgs = stripSwitch(
+    stripSwitch(stripFlags(args, "--workspace", "--model", "--thinking"), "--create-if-missing"),
+    "--last",
+  );
   const requestedSessionId = positionalArgs[0];
 
   if (requestedSessionId && useLast) {
@@ -379,6 +398,8 @@ async function runResume(args: string[]): Promise<void> {
     sessionId: requestedSessionId,
     useLast: useLast || !requestedSessionId,
     workspacePath,
+    requestedModel,
+    createIfMissing,
   });
 
   await openInteractiveChat({
@@ -478,7 +499,12 @@ async function handleSlashCommand(
     }
     case "use": {
       const sessionId = requireArg(rest[0], "session id");
-      const snapshot = await resolveSessionSelection({ sessionId });
+      const snapshot = await resolveSessionSelection({
+        sessionId,
+        workspacePath: context.workspacePath,
+        requestedModel: context.requestedModel,
+        createIfMissing: true,
+      });
       context.setSessionId(snapshot.id);
       context.setRequestedModel(snapshot.requestedModel);
       process.stdout.write(`Switched to ${sessionId}\n`);
@@ -742,14 +768,23 @@ async function createSession(
   requestedModel?: string,
   sessionId?: string,
 ): Promise<string> {
+  const session = await createSessionSnapshot(mode, workspacePath, requestedModel, sessionId);
+  return session.id;
+}
+
+async function createSessionSnapshot(
+  mode: "connect" | "launch",
+  workspacePath?: string,
+  requestedModel?: string,
+  sessionId?: string,
+): Promise<SessionSnapshot> {
   const payload = await requestJson("POST", "/sessions", {
     mode,
     ...(workspacePath ? { workspacePath } : {}),
     ...(requestedModel ? { model: requestedModel } : {}),
     ...(sessionId ? { sessionId } : {}),
   });
-  const session = payload.session as SessionSnapshot;
-  return session.id;
+  return payload.session as SessionSnapshot;
 }
 
 async function getSessionSnapshot(sessionId: string): Promise<SessionSnapshot> {
@@ -794,14 +829,30 @@ async function resolveSessionSelection(options: {
   sessionId?: string;
   useLast?: boolean;
   workspacePath?: string;
+  requestedModel?: string;
+  createIfMissing?: boolean;
 }): Promise<SessionSnapshot> {
   if (options.sessionId && options.useLast) {
     throw new Error("Use either a session id or --last, not both.");
   }
-  const snapshot = options.sessionId
-    ? await getSessionSnapshot(options.sessionId)
-    : await getLastSessionSnapshot();
+  let snapshot: SessionSnapshot;
+  if (options.sessionId) {
+    try {
+      snapshot = await getSessionSnapshot(options.sessionId);
+    } catch (error) {
+      if (!options.createIfMissing || !isSessionNotFoundError(error)) {
+        throw error;
+      }
+      snapshot = await createSessionSnapshot("connect", options.workspacePath, options.requestedModel, options.sessionId);
+    }
+  } else {
+    snapshot = await getLastSessionSnapshot();
+  }
   return ensureLiveSession(snapshot, options.workspacePath);
+}
+
+function isSessionNotFoundError(error: unknown): boolean {
+  return error instanceof Error && /^Session not found: /.test(error.message);
 }
 
 async function consumeEventStream(
@@ -896,16 +947,16 @@ Usage:
   node ./bin/ag-bridge.js [--base-url URL] session:create [--mode connect|launch] [--workspace PATH] [--model MODEL] [--session-id ID]
   node ./bin/ag-bridge.js [--base-url URL] session:list [--json]
   node ./bin/ag-bridge.js [--base-url URL] session:get <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] send <sessionId> <text> [--model MODEL]
+  node ./bin/ag-bridge.js [--base-url URL] send <sessionId> <text> [--model MODEL] [--create-if-missing]
   node ./bin/ag-bridge.js [--base-url URL] events <sessionId> [--since N] [--limit N] [--json]
   node ./bin/ag-bridge.js [--base-url URL] stream <sessionId>
   node ./bin/ag-bridge.js [--base-url URL] cancel <sessionId>
   node ./bin/ag-bridge.js [--base-url URL] approve <sessionId> <stepIndex> [--scope once|conversation]
   node ./bin/ag-bridge.js [--base-url URL] export <sessionId>
   node ./bin/ag-bridge.js [--base-url URL] delete <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL]
-  node ./bin/ag-bridge.js [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL]
-  node ./bin/ag-bridge.js [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL]
+  node ./bin/ag-bridge.js [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
+  node ./bin/ag-bridge.js [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
+  node ./bin/ag-bridge.js [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
 `;
   process.stdout.write(help.trimStart());
 }

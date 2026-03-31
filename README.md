@@ -143,6 +143,8 @@ curl -X POST http://127.0.0.1:9464/ag-sessions/sync \
 
 Existing sessions can be resumed through `POST /sessions/:id/resume`, and the CLI also supports `resume` and `chat --last`.
 
+For CLI flows that target a specific session id, you can also opt into `--create-if-missing` to create that session automatically when it does not exist yet.
+
 ## Step Detail Support
 
 If you need full AG step data in a frontend, consume `cascade.step.new` and `cascade.step.updated` directly.

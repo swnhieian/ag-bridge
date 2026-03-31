@@ -284,7 +284,12 @@ def _handle_slash_command(
 
     if command == "use":
         session_id = _require_arg(rest[0] if rest else None, "session id")
-        session = client.resolve_session(session_id=session_id, workspace_path=current_workspace)
+        session = client.resolve_session(
+            session_id=session_id,
+            workspace_path=current_workspace,
+            create_if_missing=True,
+            model=current_model,
+        )
         print(f"Switched to {session['id']}")
         return _chat_state(
             str(session["id"]),

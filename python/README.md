@@ -45,8 +45,12 @@ ag-bridge-py ag-session-sync
 ag-bridge-py session-create --model claude-4-sonnet --session-id demo_session_001
 ag-bridge-py ask "请只回复 OK" --model auto --thinking off
 ag-bridge-py ask "继续这个会话" --session demo_session_001
+ag-bridge-py ask "如果没有这个 session 就自动创建" --session demo_session_001 --create-if-missing
 ag-bridge-py resume --last
+ag-bridge-py resume demo_session_001 --create-if-missing
 ag-bridge-py chat --last
+ag-bridge-py chat --session demo_session_001 --create-if-missing
+ag-bridge-py send demo_session_001 "Hello" --create-if-missing
 ag-bridge-py stream demo_session_001 --thinking off
 ```
 
@@ -54,4 +58,5 @@ ag-bridge-py stream demo_session_001 --thinking off
 
 - 这套 Python CLI 直接调用本地 AG Bridge HTTP API
 - 命令面尽量和仓库里的 Node CLI 保持一致
+- 对 `ask`、`chat`、`resume`、`send` 这类会话型命令，可以通过 `--create-if-missing` 自动补建指定 session
 - 当前它只作为仓库内的本地工具维护，不走单独的 PyPI 发布流程

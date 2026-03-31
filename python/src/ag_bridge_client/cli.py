@@ -81,6 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume_parser.add_argument("--workspace", default=None)
     resume_parser.add_argument("--model", default=None)
     resume_parser.add_argument("--thinking", default="on", choices=["on", "off"])
+    resume_parser.add_argument("--create-if-missing", action="store_true")
     resume_parser.set_defaults(handler=run_resume)
 
     send_parser = subparsers.add_parser("send")
@@ -88,6 +89,7 @@ def build_parser() -> argparse.ArgumentParser:
     send_parser.add_argument("text")
     send_parser.add_argument("--model", default=None)
     send_parser.add_argument("--workspace", default=None)
+    send_parser.add_argument("--create-if-missing", action="store_true")
     send_parser.set_defaults(handler=run_send)
 
     events_parser = subparsers.add_parser("events")
@@ -132,6 +134,7 @@ def build_parser() -> argparse.ArgumentParser:
     ask_parser.add_argument("--last", action="store_true")
     ask_parser.add_argument("--session-id", default=None)
     ask_parser.add_argument("--thinking", default="on", choices=["on", "off"])
+    ask_parser.add_argument("--create-if-missing", action="store_true")
     ask_parser.add_argument("--json", action="store_true")
     ask_parser.set_defaults(handler=run_ask)
 
@@ -142,6 +145,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--workspace", default=None)
     chat_parser.add_argument("--thinking", default="on", choices=["on", "off"])
     chat_parser.add_argument("--model", default=None)
+    chat_parser.add_argument("--create-if-missing", action="store_true")
     chat_parser.set_defaults(handler=run_chat)
 
     return parser
@@ -205,6 +209,8 @@ def run_resume(client: BridgeClient, args: argparse.Namespace) -> None:
         session_id=args.session_id,
         use_last=args.last or not args.session_id,
         workspace_path=args.workspace,
+        requested_model=args.model,
+        create_if_missing=args.create_if_missing,
     )
     open_chat(
         client,
@@ -216,7 +222,18 @@ def run_resume(client: BridgeClient, args: argparse.Namespace) -> None:
 
 
 def run_send(client: BridgeClient, args: argparse.Namespace) -> None:
-    session = client.ensure_live_session(args.session_id, workspace_path=args.workspace)
+    session = (
+        resolve_session_selection(
+            client,
+            session_id=args.session_id,
+            use_last=False,
+            workspace_path=args.workspace,
+            requested_model=args.model,
+            create_if_missing=args.create_if_missing,
+        )
+        if args.create_if_missing
+        else client.ensure_live_session(args.session_id, workspace_path=args.workspace)
+    )
     print_json(client.send_message(str(session["id"]), args.text, model=args.model))
 
 
@@ -265,6 +282,7 @@ def run_ask(client: BridgeClient, args: argparse.Namespace) -> None:
                 session_id=args.session,
                 use_last=args.last,
                 create_session_id=args.session_id,
+                create_if_missing=args.create_if_missing,
             )
         )
         return
@@ -275,6 +293,8 @@ def run_ask(client: BridgeClient, args: argparse.Namespace) -> None:
             session_id=args.session,
             use_last=args.last,
             workspace_path=args.workspace,
+            requested_model=args.model,
+            create_if_missing=args.create_if_missing,
         )
         if args.session or args.last
         else client.create_session(
@@ -306,6 +326,8 @@ def run_chat(client: BridgeClient, args: argparse.Namespace) -> None:
             session_id=args.session,
             use_last=args.last,
             workspace_path=args.workspace,
+            requested_model=args.model,
+            create_if_missing=args.create_if_missing,
         )
     else:
         session = client.create_session(
@@ -330,11 +352,15 @@ def resolve_session_selection(
     session_id: str | None,
     use_last: bool,
     workspace_path: str | None,
+    requested_model: str | None = None,
+    create_if_missing: bool = False,
 ) -> dict[str, object]:
     return client.resolve_session(
         session_id=session_id,
         use_last=use_last,
         workspace_path=workspace_path,
+        create_if_missing=create_if_missing,
+        model=requested_model,
     )
 
 

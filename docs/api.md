@@ -543,6 +543,8 @@ Sends one message to a session.
 
 The CLI auto-resumes persisted sessions before sending.
 
+If you also pass `--create-if-missing`, the CLI creates the named session first when it does not exist yet.
+
 ### `events <sessionId>`
 
 Returns buffered events as JSON.
@@ -576,6 +578,8 @@ Useful options:
 
 - `--session <sessionId>`
   - reuse a specific existing session
+- `--create-if-missing`
+  - when used together with `--session <sessionId>`, automatically create that named session if it does not exist yet
 - `--last`
   - reuse the most recently updated session
 - `--session-id <id>`
@@ -604,7 +608,11 @@ ag-bridge-py list-models
 ag-bridge-py session-create --session-id demo_session_001
 ag-bridge-py ask "Please reply with OK only." --thinking off
 ag-bridge-py ask "Continue this conversation" --session demo_session_001
+ag-bridge-py ask "Create this session if missing" --session demo_session_001 --create-if-missing
 ag-bridge-py resume --last
+ag-bridge-py resume demo_session_001 --create-if-missing
 ag-bridge-py chat --last
+ag-bridge-py chat --session demo_session_001 --create-if-missing
+ag-bridge-py send demo_session_001 "Hello" --create-if-missing
 ag-bridge-py stream demo_session_001 --thinking off
 ```

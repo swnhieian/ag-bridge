@@ -143,6 +143,8 @@ curl -X POST http://127.0.0.1:9464/ag-sessions/sync \
 
 已有 session 可以通过 `POST /sessions/:id/resume` 恢复，CLI 也支持 `resume` 和 `chat --last`。
 
+如果是在 CLI 里指定某个 `session id` 来继续对话，也可以配合 `--create-if-missing`；当这个 session 还不存在时，会自动按这个 id 创建。
+
 ## Step 详情支持
 
 如果你要在前端完整展示 AG 的 step，建议直接消费 `cascade.step.new` 和 `cascade.step.updated`。

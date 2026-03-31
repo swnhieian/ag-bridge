@@ -95,6 +95,14 @@ class BridgeClient:
         payload = self._request_json("GET", f"/sessions/{session_id}")
         return dict(payload["session"])
 
+    def get_session_if_exists(self, session_id: str) -> JsonDict | None:
+        try:
+            return self.get_session(session_id)
+        except BridgeClientError as exc:
+            if _is_session_not_found_error(exc):
+                return None
+            raise
+
     def get_last_session(self) -> JsonDict:
         sessions = self.list_sessions()
         if not sessions:
@@ -120,11 +128,23 @@ class BridgeClient:
         session_id: str | None = None,
         use_last: bool = False,
         workspace_path: str | None = None,
+        create_if_missing: bool = False,
+        mode: str = "connect",
+        model: str | None = None,
     ) -> JsonDict:
         if session_id and use_last:
             raise BridgeClientError("Use either a session id or --last, not both.")
         if session_id:
-            session = self.get_session(session_id)
+            session = self.get_session_if_exists(session_id)
+            if session is None:
+                if not create_if_missing:
+                    raise BridgeClientError(f"Session not found: {session_id}")
+                session = self.create_session(
+                    mode=mode,
+                    workspace_path=workspace_path,
+                    model=model,
+                    session_id=session_id,
+                )
         elif use_last:
             session = self.get_last_session()
         else:
@@ -198,13 +218,21 @@ class BridgeClient:
         session_id: str | None = None,
         use_last: bool = False,
         create_session_id: str | None = None,
+        create_if_missing: bool = False,
         poll_interval: float = 0.5,
     ) -> JsonDict:
         if session_id and create_session_id:
             raise BridgeClientError("Use either an existing session or a new session-id, not both.")
 
         session = (
-            self.resolve_session(session_id=session_id, use_last=use_last, workspace_path=workspace_path)
+            self.resolve_session(
+                session_id=session_id,
+                use_last=use_last,
+                workspace_path=workspace_path,
+                create_if_missing=create_if_missing,
+                mode=mode,
+                model=model,
+            )
             if session_id or use_last
             else self.create_session(
                 mode=mode,
@@ -299,3 +327,7 @@ def _parse_error_message(raw: str) -> str | None:
         if isinstance(error, str):
             return error
     return raw
+
+
+def _is_session_not_found_error(error: BridgeClientError) -> bool:
+    return str(error).startswith("Session not found: ")
