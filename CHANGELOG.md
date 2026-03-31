@@ -4,12 +4,14 @@
 
 - Added GitHub Actions CI and tag-based Open VSX release automation.
 - Added a first-class Node CLI entrypoint through `bin/ag-bridge.js`.
+- Added native binary packaging for the Node CLI through `npm run package:cli:binary`.
 - Expanded the Python SDK / CLI to cover session resume, stream, chat, ask session reuse, and Node-aligned command aliases.
 - Restored repository-aware documentation links now that the GitHub repository metadata is configured.
 - Added `--create-if-missing` for CLI session-oriented flows so named sessions can be auto-created on demand.
 
 - 新增 GitHub Actions CI，以及基于 tag 的 Open VSX 自动发布流程。
 - 通过 `bin/ag-bridge.js` 提供了更明确的 Node CLI 入口。
+- 新增 Node CLI 原生二进制打包能力，可通过 `npm run package:cli:binary` 生成本机可执行文件。
 - 扩展了 Python SDK / CLI，补齐 session resume、stream、chat、ask 复用 session，以及与 Node 对齐的命令别名。
 - 在配置好 GitHub 仓库元数据之后，恢复了 README 中面向仓库的文档链接。
 - 为 CLI 的会话型命令补充了 `--create-if-missing`，可以在按名称指定 session 时按需自动创建。

@@ -1,3 +1,4 @@
+import path from "node:path";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import { Readable } from "node:stream";
@@ -15,6 +16,10 @@ async function main(): Promise<void> {
   const [command, ...rest] = filteredArgs;
 
   switch (command) {
+    case "-h":
+    case "--help":
+      printHelp();
+      return;
     case "serve":
       await runServe(rest);
       return;
@@ -936,29 +941,42 @@ function parseSseMessage(rawMessage: string): { event: string; data: any } | nul
 }
 
 function printHelp(): void {
+  const cliCommand = getCliInvocation();
   const help = `
 Usage:
-  node ./bin/ag-bridge.js [--base-url URL] serve [--host 127.0.0.1] [--port 9464] [--data-dir PATH]
-  node ./bin/ag-bridge.js [--base-url URL] status [--json]
-  node ./bin/ag-bridge.js [--base-url URL] ag:list [--workspace PATH] [--json]
-  node ./bin/ag-bridge.js [--base-url URL] ag:attach <cascadeId> [--workspace PATH]
-  node ./bin/ag-bridge.js [--base-url URL] ag:sync [--workspace PATH] [--json]
-  node ./bin/ag-bridge.js [--base-url URL] list-models [--workspace PATH] [--json]
-  node ./bin/ag-bridge.js [--base-url URL] session:create [--mode connect|launch] [--workspace PATH] [--model MODEL] [--session-id ID]
-  node ./bin/ag-bridge.js [--base-url URL] session:list [--json]
-  node ./bin/ag-bridge.js [--base-url URL] session:get <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] send <sessionId> <text> [--model MODEL] [--create-if-missing]
-  node ./bin/ag-bridge.js [--base-url URL] events <sessionId> [--since N] [--limit N] [--json]
-  node ./bin/ag-bridge.js [--base-url URL] stream <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] cancel <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] approve <sessionId> <stepIndex> [--scope once|conversation]
-  node ./bin/ag-bridge.js [--base-url URL] export <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] delete <sessionId>
-  node ./bin/ag-bridge.js [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
-  node ./bin/ag-bridge.js [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
-  node ./bin/ag-bridge.js [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
+  ${cliCommand} [--base-url URL] serve [--host 127.0.0.1] [--port 9464] [--data-dir PATH]
+  ${cliCommand} [--base-url URL] status [--json]
+  ${cliCommand} [--base-url URL] ag:list [--workspace PATH] [--json]
+  ${cliCommand} [--base-url URL] ag:attach <cascadeId> [--workspace PATH]
+  ${cliCommand} [--base-url URL] ag:sync [--workspace PATH] [--json]
+  ${cliCommand} [--base-url URL] list-models [--workspace PATH] [--json]
+  ${cliCommand} [--base-url URL] session:create [--mode connect|launch] [--workspace PATH] [--model MODEL] [--session-id ID]
+  ${cliCommand} [--base-url URL] session:list [--json]
+  ${cliCommand} [--base-url URL] session:get <sessionId>
+  ${cliCommand} [--base-url URL] send <sessionId> <text> [--model MODEL] [--create-if-missing]
+  ${cliCommand} [--base-url URL] events <sessionId> [--since N] [--limit N] [--json]
+  ${cliCommand} [--base-url URL] stream <sessionId>
+  ${cliCommand} [--base-url URL] cancel <sessionId>
+  ${cliCommand} [--base-url URL] approve <sessionId> <stepIndex> [--scope once|conversation]
+  ${cliCommand} [--base-url URL] export <sessionId>
+  ${cliCommand} [--base-url URL] delete <sessionId>
+  ${cliCommand} [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
+  ${cliCommand} [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
+  ${cliCommand} [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
 `;
   process.stdout.write(help.trimStart());
+}
+
+function getCliInvocation(): string {
+  const scriptArg = process.argv[1];
+  if (scriptArg && /\.(?:[cm]?js|ts)$/i.test(scriptArg)) {
+    const relativeScriptPath = path.relative(process.cwd(), scriptArg);
+    const scriptPath = relativeScriptPath && !relativeScriptPath.startsWith("..")
+      ? `./${relativeScriptPath}`
+      : scriptArg;
+    return `node ${scriptPath}`;
+  }
+  return path.basename(process.argv0 || process.execPath || "ag-bridge");
 }
 
 function helpForChat(): string {

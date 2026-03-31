@@ -6,3 +6,5 @@ node_modules/
 .ag-bridge-sync-test/
 __pycache__/
 *.pyc
+.sea/
+artifacts/

@@ -176,6 +176,16 @@ node ./bin/ag-bridge.js resume --last
 
 The repository also ships a first-class Node CLI entrypoint at `bin/ag-bridge.js`, so source builds, local scripts, and CI can reuse the same command surface without reaching into `dist/` directly.
 
+If you want a single executable instead of running through `node`, build a native CLI binary with:
+
+```bash
+npm run package:cli:binary
+```
+
+The generated file is written to `artifacts/cli/`, for example `artifacts/cli/ag-bridge-cli-darwin-arm64`.
+
+This binary is currently built for the host platform and architecture of the machine that runs the packaging command.
+
 ## More Documentation
 
 - [简体中文说明](README.zh-CN.md)

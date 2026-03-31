@@ -1,8 +1,11 @@
 .github/**
 .venv/**
+artifacts/**
 bin/**
+scripts/**
 src/**
 python/**
+.sea/**
 .ag-bridge-dev/**
 .ag-bridge-sync-test/**
 *.vsix

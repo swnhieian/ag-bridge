@@ -176,6 +176,16 @@ node ./bin/ag-bridge.js resume --last
 
 仓库现在也内置了一个正式的 Node CLI 入口 `bin/ag-bridge.js`，这样无论是源码环境、本地脚本还是 CI，都可以直接复用同一套命令，而不需要显式依赖 `dist/` 路径。
 
+如果你希望直接拿到一个可执行文件，而不是通过 `node` 来运行，也可以执行：
+
+```bash
+npm run package:cli:binary
+```
+
+生成后的文件会放在 `artifacts/cli/` 目录下，例如 `artifacts/cli/ag-bridge-cli-darwin-arm64`。
+
+当前这条打包链路生成的是“当前执行打包命令的机器”的平台和架构对应的二进制。
+
 ## 更多文档
 
 - [English README](README.md)
