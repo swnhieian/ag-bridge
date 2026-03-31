@@ -10,6 +10,7 @@ class ExtensionBridgeController {
   private refreshTimer?: NodeJS.Timeout;
   private readonly output: VSCode.OutputChannel;
   private readonly statusItem: VSCode.StatusBarItem;
+  readonly ui: UiCopy;
   private autoApprovalSettings: AutoApprovalSettings = defaultAutoApprovalSettings();
   private readonly expandedSessionIds = new Set<string>();
 
@@ -17,6 +18,7 @@ class ExtensionBridgeController {
     private readonly vscode: typeof VSCode,
     private readonly context: VSCode.ExtensionContext,
   ) {
+    this.ui = getUiCopy(vscode.env.language);
     this.output = vscode.window.createOutputChannel("AG Bridge");
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
     this.statusItem.command = "agBridge.openDashboard";
@@ -48,15 +50,15 @@ class ExtensionBridgeController {
       this.server.updateAutoApprovalSettings(this.autoApprovalSettings);
       this.lastStartError = undefined;
       const status = this.server.getStatus();
-      this.output.appendLine(`[${new Date().toISOString()}] 服务已启动: ${status.address}`);
+      this.output.appendLine(`[${new Date().toISOString()}] ${this.ui.outputStarted}: ${status.address}`);
       if (status.switchedPort) {
         this.output.appendLine(
-          `[${new Date().toISOString()}] 默认端口 ${status.requestedPort} 被占用，切换到 ${status.actualPort}`,
+          `[${new Date().toISOString()}] ${this.ui.outputPortSwitched(status.requestedPort, status.actualPort)}`,
         );
       }
     } catch (error) {
       this.lastStartError = error instanceof Error ? error.message : String(error);
-      this.output.appendLine(`[${new Date().toISOString()}] 启动失败: ${this.lastStartError}`);
+      this.output.appendLine(`[${new Date().toISOString()}] ${this.ui.outputStartFailed}: ${this.lastStartError}`);
       await this.renderDashboard();
       throw error;
     }
@@ -71,7 +73,7 @@ class ExtensionBridgeController {
     }
 
     await this.server.stop();
-    this.output.appendLine(`[${new Date().toISOString()}] 服务已停止`);
+    this.output.appendLine(`[${new Date().toISOString()}] ${this.ui.outputStopped}`);
     this.server = undefined;
     this.updateStatusBar();
     await this.renderDashboard();
@@ -83,14 +85,14 @@ class ExtensionBridgeController {
 
   async syncAgSessions(): Promise<void> {
     if (!this.server?.running) {
-      void this.vscode.window.showWarningMessage("AG Bridge 尚未启动，无法同步 AG sessions。");
+      void this.vscode.window.showWarningMessage(this.ui.syncRequiresRunning);
       return;
     }
 
     const result = await this.server.attachAllAgSessions();
     await this.renderDashboard();
     void this.vscode.window.showInformationMessage(
-      `已同步 ${result.discovered.length} 个 AG session，当前附加 ${result.attached.length} 个。`,
+      this.ui.syncFinished(result.discovered.length, result.attached.length),
     );
   }
 
@@ -105,7 +107,7 @@ class ExtensionBridgeController {
     }
 
     await this.renderDashboard();
-    void this.vscode.window.showInformationMessage("自动审批设置已更新。");
+    void this.vscode.window.showInformationMessage(this.ui.autoApprovalSaved);
   }
 
   getStatus(): ServerStatus | undefined {
@@ -116,7 +118,7 @@ class ExtensionBridgeController {
     if (!this.panel) {
       this.panel = this.vscode.window.createWebviewPanel(
         "agBridge.dashboard",
-        "AG Bridge 状态",
+        this.ui.dashboardTitle,
         this.vscode.ViewColumn.Active,
         { enableScripts: true },
       );
@@ -136,7 +138,7 @@ class ExtensionBridgeController {
               await this.start();
             } catch (error) {
               const text = error instanceof Error ? error.message : String(error);
-              void this.vscode.window.showErrorMessage(`AG Bridge 启动失败: ${text}`);
+              void this.vscode.window.showErrorMessage(this.ui.startFailedMessage(text));
             }
             return;
           case "stop":
@@ -148,11 +150,11 @@ class ExtensionBridgeController {
           case "copy-address": {
             const status = this.server?.getStatus();
             if (!status?.address) {
-              void this.vscode.window.showWarningMessage("AG Bridge 尚未启动，当前没有可复制的 base URL。");
+              void this.vscode.window.showWarningMessage(this.ui.copyAddressUnavailable);
               return;
             }
             await this.vscode.env.clipboard.writeText(status.address);
-            void this.vscode.window.showInformationMessage(`已复制 base URL: ${status.address}`);
+            void this.vscode.window.showInformationMessage(this.ui.copyAddressDone(status.address));
             return;
           }
           case "sync-ag-sessions":
@@ -215,12 +217,12 @@ class ExtensionBridgeController {
     const status = this.server?.getStatus();
     if (status?.running && status.address) {
       this.statusItem.text = `$(radio-tower) AG Bridge ${status.actualPort}`;
-      this.statusItem.tooltip = `AG Bridge 已启动: ${status.address}`;
+      this.statusItem.tooltip = this.ui.statusBarRunning(status.address);
       return;
     }
 
-    this.statusItem.text = "$(debug-disconnect) AG Bridge 未启动";
-    this.statusItem.tooltip = this.lastStartError ? `启动失败: ${this.lastStartError}` : "AG Bridge 未启动";
+    this.statusItem.text = this.ui.statusBarStoppedText;
+    this.statusItem.tooltip = this.lastStartError ? this.ui.statusBarStartFailed(this.lastStartError) : this.ui.statusBarStoppedTooltip;
   }
 
   private async renderDashboard(): Promise<void> {
@@ -229,13 +231,13 @@ class ExtensionBridgeController {
     }
 
     const model = this.getDashboardModel();
-    this.panel.webview.html = renderDashboardHtml(model);
+    this.panel.webview.html = renderDashboardHtml(model, this.ui);
     this.updateStatusBar();
   }
 
   private getDashboardModel(): DashboardModel {
     const config = this.vscode.workspace.getConfiguration("agBridge");
-    const workspacePath = this.vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? "未检测到工作区";
+    const workspacePath = this.vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? this.ui.workspaceNotDetected;
     const status =
       this.server?.getStatus() ??
       createStoppedStatus({
@@ -256,7 +258,7 @@ class ExtensionBridgeController {
         sessionExports[sessionId] = this.server?.exportSession(sessionId);
       } catch (error) {
         this.output.appendLine(
-          `[${new Date().toISOString()}] 读取 session 详情失败: ${sessionId} -> ${error instanceof Error ? error.message : String(error)}`,
+          `[${new Date().toISOString()}] ${this.ui.outputReadSessionDetailFailed(sessionId, error instanceof Error ? error.message : String(error))}`,
         );
       }
     }
@@ -300,15 +302,15 @@ export async function activateExtension(
       const status = controller?.getStatus();
       if (status?.switchedPort) {
         void vscode.window.showWarningMessage(
-          `AG Bridge 已启动，默认端口 ${status.requestedPort} 被占用，当前使用 ${status.actualPort}。`,
+          controller?.ui.commandStartedWithPortSwitch(status.requestedPort, status.actualPort) ?? "",
         );
       } else {
-        void vscode.window.showInformationMessage("AG Bridge 已启动。");
+        void vscode.window.showInformationMessage(controller?.ui.commandStarted ?? "");
       }
     }),
     vscode.commands.registerCommand("agBridge.stopServer", async () => {
       await controller?.stop();
-      void vscode.window.showInformationMessage("AG Bridge 已停止。");
+      void vscode.window.showInformationMessage(controller?.ui.commandStopped ?? "");
     }),
     vscode.commands.registerCommand("agBridge.showStatus", async () => {
       await controller?.showStatus();
@@ -324,7 +326,7 @@ export async function activateExtension(
       await controller.start();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      void vscode.window.showErrorMessage(`AG Bridge 启动失败: ${message}`);
+      void vscode.window.showErrorMessage(controller.ui.startFailedMessage(message));
     }
   }
 }
@@ -353,26 +355,26 @@ function createStoppedStatus(options: {
   };
 }
 
-function renderDashboardHtml(model: DashboardModel): string {
+function renderDashboardHtml(model: DashboardModel, ui: UiCopy): string {
   const { status, sessions, workspacePath, extensionVersion, lastStartError, autoApprovalSettings, expandedSessionIds, sessionExports } = model;
   const portNotice =
     status.running && status.switchedPort
-      ? `<div class="notice warning">默认端口 <code>${status.requestedPort}</code> 已占用，当前实际端口是 <code>${status.actualPort}</code>。</div>`
+      ? `<div class="notice warning">${ui.dashboardPortNotice(status.requestedPort, status.actualPort)}</div>`
       : "";
-  const errorNotice = lastStartError ? `<div class="notice error">最近一次启动失败：${escapeHtml(lastStartError)}</div>` : "";
+  const errorNotice = lastStartError ? `<div class="notice error">${ui.dashboardLastStartFailed}: ${escapeHtml(lastStartError)}</div>` : "";
   const sessionRows =
     sessions.length === 0
-      ? `<tr><td colspan="9" class="muted">当前还没有 session。</td></tr>`
+      ? `<tr><td colspan="9" class="muted">${ui.dashboardNoSessions}</td></tr>`
       : sessions
           .map(
             (session) => {
               const expanded = expandedSessionIds.has(session.id);
-              const details = expanded ? renderSessionDetails(sessionExports[session.id], session) : "";
+              const details = expanded ? renderSessionDetails(sessionExports[session.id], session, ui) : "";
               return `
               <tr class="session-row">
                 <td>
                   <button class="icon-button" data-action="toggle-session-detail" data-session-id="${escapeHtml(session.id)}" aria-expanded="${expanded ? "true" : "false"}">
-                    ${expanded ? "收起" : "展开"}
+                    ${expanded ? ui.dashboardCollapse : ui.dashboardExpand}
                   </button>
                 </td>
                 <td><code>${escapeHtml(session.id)}</code></td>
@@ -390,11 +392,11 @@ function renderDashboardHtml(model: DashboardModel): string {
           .join("");
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="${ui.htmlLang}">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AG Bridge 状态</title>
+    <title>${ui.dashboardTitle}</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -667,59 +669,59 @@ function renderDashboardHtml(model: DashboardModel): string {
   </head>
   <body>
     <div class="app">
-      <h1>AG Bridge 状态</h1>
+      <h1>${ui.dashboardTitle}</h1>
       <div class="toolbar">
-        <button data-action="start">启动服务</button>
-        <button data-action="stop">停止服务</button>
-        <button data-action="refresh">刷新</button>
-        <button data-action="copy-address">复制 Base URL</button>
-        <button data-action="sync-ag-sessions">同步 AG Sessions</button>
-        <button data-action="open-health">打开 /health</button>
-        <button data-action="open-status">打开 /status</button>
+        <button data-action="start">${ui.dashboardStart}</button>
+        <button data-action="stop">${ui.dashboardStop}</button>
+        <button data-action="refresh">${ui.dashboardRefresh}</button>
+        <button data-action="copy-address">${ui.dashboardCopyBaseUrl}</button>
+        <button data-action="sync-ag-sessions">${ui.dashboardSyncAgSessions}</button>
+        <button data-action="open-health">${ui.dashboardOpenHealth}</button>
+        <button data-action="open-status">${ui.dashboardOpenStatus}</button>
       </div>
       ${portNotice}
       ${errorNotice}
       <div class="grid">
         <div class="card">
-          <div class="label">运行状态</div>
-          <div class="value">${status.running ? "running" : "stopped"}</div>
+          <div class="label">${ui.dashboardRunState}</div>
+          <div class="value">${status.running ? ui.dashboardRunning : ui.dashboardStopped}</div>
         </div>
         <div class="card">
-          <div class="label">监听地址</div>
-          <div class="value">${escapeHtml(status.address ?? "(未启动)")}</div>
+          <div class="label">${ui.dashboardAddress}</div>
+          <div class="value">${escapeHtml(status.address ?? ui.dashboardNotStarted)}</div>
         </div>
         <div class="card">
-          <div class="label">端口</div>
-          <div class="value">请求 ${status.requestedPort} / 实际 ${status.actualPort ?? "(未启动)"}</div>
+          <div class="label">${ui.dashboardPort}</div>
+          <div class="value">${ui.dashboardPortValue(status.requestedPort, status.actualPort ?? ui.dashboardNotStarted)}</div>
         </div>
         <div class="card">
-          <div class="label">数据目录</div>
+          <div class="label">${ui.dashboardDataDir}</div>
           <div class="value"><code>${escapeHtml(status.dataDir)}</code></div>
         </div>
         <div class="card">
-          <div class="label">工作区</div>
+          <div class="label">${ui.dashboardWorkspace}</div>
           <div class="value"><code>${escapeHtml(workspacePath)}</code></div>
         </div>
         <div class="card">
-          <div class="label">Session 统计</div>
-          <div class="value">总计 ${status.sessionCount} / live ${status.liveSessionCount} / 持久化 ${status.persistedSessionCount}</div>
+          <div class="label">${ui.dashboardSessionStats}</div>
+          <div class="value">${ui.dashboardSessionStatsValue(status.sessionCount, status.liveSessionCount, status.persistedSessionCount)}</div>
         </div>
         <div class="card">
-          <div class="label">扩展版本</div>
+          <div class="label">${ui.dashboardExtensionVersion}</div>
           <div class="value">${escapeHtml(extensionVersion)}</div>
         </div>
       </div>
-      <h2>自动审批</h2>
+      <h2>${ui.dashboardAutoApproval}</h2>
       <div class="card">
-        <div class="label">服务级自动 accept / allow</div>
+        <div class="label">${ui.dashboardAutoApprovalSubtitle}</div>
         <div class="controls">
-          <label class="control"><input id="auto-enabled" type="checkbox" ${autoApprovalSettings.enabled ? "checked" : ""} />启用自动审批</label>
-          <label class="control"><input id="auto-run-commands" type="checkbox" ${autoApprovalSettings.runCommands ? "checked" : ""} />自动接受命令执行</label>
-          <label class="control"><input id="auto-file-permissions" type="checkbox" ${autoApprovalSettings.filePermissions ? "checked" : ""} />自动允许文件权限</label>
-          <label class="control"><input id="auto-open-browser" type="checkbox" ${autoApprovalSettings.openBrowser ? "checked" : ""} />自动允许打开浏览器</label>
-          <label class="control"><input id="auto-browser-actions" type="checkbox" ${autoApprovalSettings.browserActions ? "checked" : ""} />自动允许浏览器操作</label>
-          <label class="control"><input id="auto-send-command-input" type="checkbox" ${autoApprovalSettings.sendCommandInput ? "checked" : ""} />自动允许命令输入</label>
-          <label class="control">文件权限范围
+          <label class="control"><input id="auto-enabled" type="checkbox" ${autoApprovalSettings.enabled ? "checked" : ""} />${ui.dashboardEnableAutoApproval}</label>
+          <label class="control"><input id="auto-run-commands" type="checkbox" ${autoApprovalSettings.runCommands ? "checked" : ""} />${ui.dashboardAutoRunCommands}</label>
+          <label class="control"><input id="auto-file-permissions" type="checkbox" ${autoApprovalSettings.filePermissions ? "checked" : ""} />${ui.dashboardAutoFilePermissions}</label>
+          <label class="control"><input id="auto-open-browser" type="checkbox" ${autoApprovalSettings.openBrowser ? "checked" : ""} />${ui.dashboardAutoOpenBrowser}</label>
+          <label class="control"><input id="auto-browser-actions" type="checkbox" ${autoApprovalSettings.browserActions ? "checked" : ""} />${ui.dashboardAutoBrowserActions}</label>
+          <label class="control"><input id="auto-send-command-input" type="checkbox" ${autoApprovalSettings.sendCommandInput ? "checked" : ""} />${ui.dashboardAutoSendCommandInput}</label>
+          <label class="control">${ui.dashboardFilePermissionScope}
             <select id="auto-file-scope">
               <option value="once" ${autoApprovalSettings.filePermissionScope === "once" ? "selected" : ""}>once</option>
               <option value="conversation" ${autoApprovalSettings.filePermissionScope === "conversation" ? "selected" : ""}>conversation</option>
@@ -727,23 +729,23 @@ function renderDashboardHtml(model: DashboardModel): string {
           </label>
         </div>
         <div class="toolbar" style="margin-top: 12px; margin-bottom: 0;">
-          <button data-action="save-auto-approval">保存自动审批设置</button>
+          <button data-action="save-auto-approval">${ui.dashboardSaveAutoApproval}</button>
         </div>
       </div>
-      <h2>Sessions</h2>
+      <h2>${ui.dashboardSessions}</h2>
       <div class="table-wrap">
         <table>
           <thead>
             <tr>
-              <th>操作</th>
+              <th>${ui.dashboardAction}</th>
               <th>ID</th>
-              <th>标题</th>
-              <th>状态</th>
-              <th>模式</th>
-              <th>运行态</th>
-              <th>消息</th>
-              <th>步骤</th>
-              <th>预览</th>
+              <th>${ui.dashboardTitleLabel}</th>
+              <th>${ui.dashboardState}</th>
+              <th>${ui.dashboardMode}</th>
+              <th>${ui.dashboardRunStatus}</th>
+              <th>${ui.dashboardMessages}</th>
+              <th>${ui.dashboardSteps}</th>
+              <th>${ui.dashboardPreview}</th>
             </tr>
           </thead>
           <tbody>${sessionRows}</tbody>
@@ -777,20 +779,20 @@ function renderDashboardHtml(model: DashboardModel): string {
 </html>`;
 }
 
-function renderSessionDetails(exported: SessionExport | undefined, session: SessionSnapshot): string {
+function renderSessionDetails(exported: SessionExport | undefined, session: SessionSnapshot, ui: UiCopy): string {
   if (!exported) {
     return `
       <tr class="session-detail-row">
         <td colspan="9">
-          <div class="detail-panel muted">暂时无法读取这个 session 的详情。</div>
+          <div class="detail-panel muted">${ui.detailUnavailable}</div>
         </td>
       </tr>`;
   }
 
-  const transcript = extractTranscriptEntries(exported.events);
+  const transcript = extractTranscriptEntries(exported.events, ui);
   const transcriptHtml =
     transcript.length === 0
-      ? `<div class="muted">当前还没有可整理的消息内容。</div>`
+      ? `<div class="muted">${ui.detailNoTranscript}</div>`
       : transcript
           .map(
             (entry) => `
@@ -808,7 +810,7 @@ function renderSessionDetails(exported: SessionExport | undefined, session: Sess
 
   const eventsHtml =
     exported.events.length === 0
-      ? `<div class="muted">当前还没有记录到 event。</div>`
+      ? `<div class="muted">${ui.detailNoEvents}</div>`
       : exported.events
           .map(
             (event) => `
@@ -830,16 +832,16 @@ function renderSessionDetails(exported: SessionExport | undefined, session: Sess
           <div class="detail-summary">
             <span>session: <code>${escapeHtml(session.id)}</code></span>
             <span>cascade: <code>${escapeHtml(session.cascadeId)}</code></span>
-            <span>消息条数: ${transcript.length}</span>
-            <span>event 条数: ${exported.events.length}</span>
+            <span>${ui.detailMessageCount}: ${transcript.length}</span>
+            <span>${ui.detailEventCount}: ${exported.events.length}</span>
           </div>
           <div class="detail-grid">
             <div class="detail-card">
-              <h3>消息视图</h3>
+              <h3>${ui.detailMessagesView}</h3>
               <div class="message-list">${transcriptHtml}</div>
             </div>
             <div class="detail-card">
-              <h3>完整 Events</h3>
+              <h3>${ui.detailFullEvents}</h3>
               <div class="event-list">${eventsHtml}</div>
             </div>
           </div>
@@ -848,7 +850,7 @@ function renderSessionDetails(exported: SessionExport | undefined, session: Sess
     </tr>`;
 }
 
-function extractTranscriptEntries(events: BridgeEvent[]): Array<{
+function extractTranscriptEntries(events: BridgeEvent[], ui: UiCopy): Array<{
   role: string;
   label: string;
   text: string;
@@ -878,8 +880,8 @@ function extractTranscriptEntries(events: BridgeEvent[]): Array<{
       matchedBridgeSent.add(matchedIndex);
     }
     entries.push({
-      role: "user",
-      label: matchedIndex !== undefined ? "bridge / observed" : "observed",
+      role: ui.transcriptUser,
+      label: matchedIndex !== undefined ? ui.transcriptBridgeObserved : ui.transcriptObserved,
       text,
       timestamp: event.timestamp,
       stepIndex: readStepIndex(event),
@@ -896,8 +898,8 @@ function extractTranscriptEntries(events: BridgeEvent[]): Array<{
       const seqIndex = event.seq;
       if (!matchedBridgeSent.has(seqIndex)) {
         entries.push({
-          role: "user",
-          label: "bridge",
+          role: ui.transcriptUser,
+          label: ui.transcriptBridge,
           text,
           timestamp: event.timestamp,
         });
@@ -933,8 +935,8 @@ function extractTranscriptEntries(events: BridgeEvent[]): Array<{
 
   for (const [stepIndex, value] of assistantByStep.entries()) {
     entries.push({
-      role: "assistant",
-      label: "reply",
+      role: ui.transcriptAssistant,
+      label: ui.transcriptReply,
       text: value.text,
       timestamp: value.timestamp,
       stepIndex,
@@ -1025,4 +1027,249 @@ function truncate(value: string, maxLength: number): string {
     return value;
   }
   return `${value.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+interface UiCopy {
+  htmlLang: string;
+  dashboardTitle: string;
+  outputStarted: string;
+  outputPortSwitched(requestedPort: number, actualPort?: number): string;
+  outputStartFailed: string;
+  outputStopped: string;
+  outputReadSessionDetailFailed(sessionId: string, message: string): string;
+  syncRequiresRunning: string;
+  syncFinished(discovered: number, attached: number): string;
+  autoApprovalSaved: string;
+  startFailedMessage(message: string): string;
+  copyAddressUnavailable: string;
+  copyAddressDone(address: string): string;
+  statusBarRunning(address: string): string;
+  statusBarStoppedText: string;
+  statusBarStoppedTooltip: string;
+  statusBarStartFailed(message: string): string;
+  workspaceNotDetected: string;
+  commandStartedWithPortSwitch(requestedPort: number, actualPort?: number): string;
+  commandStarted: string;
+  commandStopped: string;
+  dashboardPortNotice(requestedPort: number, actualPort?: number): string;
+  dashboardLastStartFailed: string;
+  dashboardNoSessions: string;
+  dashboardCollapse: string;
+  dashboardExpand: string;
+  dashboardStart: string;
+  dashboardStop: string;
+  dashboardRefresh: string;
+  dashboardCopyBaseUrl: string;
+  dashboardSyncAgSessions: string;
+  dashboardOpenHealth: string;
+  dashboardOpenStatus: string;
+  dashboardRunState: string;
+  dashboardRunning: string;
+  dashboardStopped: string;
+  dashboardAddress: string;
+  dashboardNotStarted: string;
+  dashboardPort: string;
+  dashboardPortValue(requestedPort: number, actualPort: number | string): string;
+  dashboardDataDir: string;
+  dashboardWorkspace: string;
+  dashboardSessionStats: string;
+  dashboardSessionStatsValue(total: number, live: number, persisted: number): string;
+  dashboardExtensionVersion: string;
+  dashboardAutoApproval: string;
+  dashboardAutoApprovalSubtitle: string;
+  dashboardEnableAutoApproval: string;
+  dashboardAutoRunCommands: string;
+  dashboardAutoFilePermissions: string;
+  dashboardAutoOpenBrowser: string;
+  dashboardAutoBrowserActions: string;
+  dashboardAutoSendCommandInput: string;
+  dashboardFilePermissionScope: string;
+  dashboardSaveAutoApproval: string;
+  dashboardSessions: string;
+  dashboardAction: string;
+  dashboardTitleLabel: string;
+  dashboardState: string;
+  dashboardMode: string;
+  dashboardRunStatus: string;
+  dashboardMessages: string;
+  dashboardSteps: string;
+  dashboardPreview: string;
+  detailUnavailable: string;
+  detailNoTranscript: string;
+  detailNoEvents: string;
+  detailMessageCount: string;
+  detailEventCount: string;
+  detailMessagesView: string;
+  detailFullEvents: string;
+  transcriptUser: string;
+  transcriptAssistant: string;
+  transcriptBridgeObserved: string;
+  transcriptObserved: string;
+  transcriptBridge: string;
+  transcriptReply: string;
+}
+
+function getUiCopy(language: string | undefined): UiCopy {
+  const isZh = (language ?? "").toLowerCase().startsWith("zh");
+  if (isZh) {
+    return {
+      htmlLang: "zh-CN",
+      dashboardTitle: "AG Bridge 状态",
+      outputStarted: "服务已启动",
+      outputPortSwitched: (requestedPort, actualPort) => `默认端口 ${requestedPort} 被占用，切换到 ${actualPort}`,
+      outputStartFailed: "启动失败",
+      outputStopped: "服务已停止",
+      outputReadSessionDetailFailed: (sessionId, message) => `读取 session 详情失败: ${sessionId} -> ${message}`,
+      syncRequiresRunning: "AG Bridge 尚未启动，无法同步 AG sessions。",
+      syncFinished: (discovered, attached) => `已同步 ${discovered} 个 AG session，当前附加 ${attached} 个。`,
+      autoApprovalSaved: "自动审批设置已更新。",
+      startFailedMessage: (message) => `AG Bridge 启动失败: ${message}`,
+      copyAddressUnavailable: "AG Bridge 尚未启动，当前没有可复制的 base URL。",
+      copyAddressDone: (address) => `已复制 base URL: ${address}`,
+      statusBarRunning: (address) => `AG Bridge 已启动: ${address}`,
+      statusBarStoppedText: "$(debug-disconnect) AG Bridge 未启动",
+      statusBarStoppedTooltip: "AG Bridge 未启动",
+      statusBarStartFailed: (message) => `启动失败: ${message}`,
+      workspaceNotDetected: "未检测到工作区",
+      commandStartedWithPortSwitch: (requestedPort, actualPort) => `AG Bridge 已启动，默认端口 ${requestedPort} 被占用，当前使用 ${actualPort}。`,
+      commandStarted: "AG Bridge 已启动。",
+      commandStopped: "AG Bridge 已停止。",
+      dashboardPortNotice: (requestedPort, actualPort) => `默认端口 <code>${requestedPort}</code> 已占用，当前实际端口是 <code>${actualPort}</code>。`,
+      dashboardLastStartFailed: "最近一次启动失败",
+      dashboardNoSessions: "当前还没有 session。",
+      dashboardCollapse: "收起",
+      dashboardExpand: "展开",
+      dashboardStart: "启动服务",
+      dashboardStop: "停止服务",
+      dashboardRefresh: "刷新",
+      dashboardCopyBaseUrl: "复制 Base URL",
+      dashboardSyncAgSessions: "同步 AG Sessions",
+      dashboardOpenHealth: "打开 /health",
+      dashboardOpenStatus: "打开 /status",
+      dashboardRunState: "运行状态",
+      dashboardRunning: "running",
+      dashboardStopped: "stopped",
+      dashboardAddress: "监听地址",
+      dashboardNotStarted: "(未启动)",
+      dashboardPort: "端口",
+      dashboardPortValue: (requestedPort, actualPort) => `请求 ${requestedPort} / 实际 ${actualPort}`,
+      dashboardDataDir: "数据目录",
+      dashboardWorkspace: "工作区",
+      dashboardSessionStats: "Session 统计",
+      dashboardSessionStatsValue: (total, live, persisted) => `总计 ${total} / live ${live} / 持久化 ${persisted}`,
+      dashboardExtensionVersion: "扩展版本",
+      dashboardAutoApproval: "自动审批",
+      dashboardAutoApprovalSubtitle: "服务级自动 accept / allow",
+      dashboardEnableAutoApproval: "启用自动审批",
+      dashboardAutoRunCommands: "自动接受命令执行",
+      dashboardAutoFilePermissions: "自动允许文件权限",
+      dashboardAutoOpenBrowser: "自动允许打开浏览器",
+      dashboardAutoBrowserActions: "自动允许浏览器操作",
+      dashboardAutoSendCommandInput: "自动允许命令输入",
+      dashboardFilePermissionScope: "文件权限范围",
+      dashboardSaveAutoApproval: "保存自动审批设置",
+      dashboardSessions: "Sessions",
+      dashboardAction: "操作",
+      dashboardTitleLabel: "标题",
+      dashboardState: "状态",
+      dashboardMode: "模式",
+      dashboardRunStatus: "运行态",
+      dashboardMessages: "消息",
+      dashboardSteps: "步骤",
+      dashboardPreview: "预览",
+      detailUnavailable: "暂时无法读取这个 session 的详情。",
+      detailNoTranscript: "当前还没有可整理的消息内容。",
+      detailNoEvents: "当前还没有记录到 event。",
+      detailMessageCount: "消息条数",
+      detailEventCount: "event 条数",
+      detailMessagesView: "消息视图",
+      detailFullEvents: "完整 Events",
+      transcriptUser: "user",
+      transcriptAssistant: "assistant",
+      transcriptBridgeObserved: "bridge / observed",
+      transcriptObserved: "observed",
+      transcriptBridge: "bridge",
+      transcriptReply: "reply",
+    };
+  }
+
+  return {
+    htmlLang: "en",
+    dashboardTitle: "AG Bridge Dashboard",
+    outputStarted: "Service started",
+    outputPortSwitched: (requestedPort, actualPort) => `Default port ${requestedPort} was busy, switched to ${actualPort}`,
+    outputStartFailed: "Start failed",
+    outputStopped: "Service stopped",
+    outputReadSessionDetailFailed: (sessionId, message) => `Failed to read session details: ${sessionId} -> ${message}`,
+    syncRequiresRunning: "AG Bridge is not running, so AG sessions cannot be synced yet.",
+    syncFinished: (discovered, attached) => `Synced ${discovered} AG sessions and attached ${attached} of them.`,
+    autoApprovalSaved: "Auto-approval settings updated.",
+    startFailedMessage: (message) => `AG Bridge failed to start: ${message}`,
+    copyAddressUnavailable: "AG Bridge is not running, so there is no base URL to copy.",
+    copyAddressDone: (address) => `Copied base URL: ${address}`,
+    statusBarRunning: (address) => `AG Bridge is running: ${address}`,
+    statusBarStoppedText: "$(debug-disconnect) AG Bridge stopped",
+    statusBarStoppedTooltip: "AG Bridge is not running",
+    statusBarStartFailed: (message) => `Start failed: ${message}`,
+    workspaceNotDetected: "No workspace detected",
+    commandStartedWithPortSwitch: (requestedPort, actualPort) => `AG Bridge started, but default port ${requestedPort} was busy, so it switched to ${actualPort}.`,
+    commandStarted: "AG Bridge started.",
+    commandStopped: "AG Bridge stopped.",
+    dashboardPortNotice: (requestedPort, actualPort) => `Default port <code>${requestedPort}</code> was busy. The active port is <code>${actualPort}</code>.`,
+    dashboardLastStartFailed: "Last startup failed",
+    dashboardNoSessions: "No sessions yet.",
+    dashboardCollapse: "Collapse",
+    dashboardExpand: "Expand",
+    dashboardStart: "Start service",
+    dashboardStop: "Stop service",
+    dashboardRefresh: "Refresh",
+    dashboardCopyBaseUrl: "Copy base URL",
+    dashboardSyncAgSessions: "Sync AG sessions",
+    dashboardOpenHealth: "Open /health",
+    dashboardOpenStatus: "Open /status",
+    dashboardRunState: "Run state",
+    dashboardRunning: "running",
+    dashboardStopped: "stopped",
+    dashboardAddress: "Address",
+    dashboardNotStarted: "(not started)",
+    dashboardPort: "Port",
+    dashboardPortValue: (requestedPort, actualPort) => `requested ${requestedPort} / actual ${actualPort}`,
+    dashboardDataDir: "Data directory",
+    dashboardWorkspace: "Workspace",
+    dashboardSessionStats: "Session stats",
+    dashboardSessionStatsValue: (total, live, persisted) => `total ${total} / live ${live} / persisted ${persisted}`,
+    dashboardExtensionVersion: "Extension version",
+    dashboardAutoApproval: "Auto approval",
+    dashboardAutoApprovalSubtitle: "Service-level automatic accept / allow settings",
+    dashboardEnableAutoApproval: "Enable auto approval",
+    dashboardAutoRunCommands: "Auto-accept command execution",
+    dashboardAutoFilePermissions: "Auto-allow file permissions",
+    dashboardAutoOpenBrowser: "Auto-allow open browser",
+    dashboardAutoBrowserActions: "Auto-allow browser actions",
+    dashboardAutoSendCommandInput: "Auto-allow command input",
+    dashboardFilePermissionScope: "File permission scope",
+    dashboardSaveAutoApproval: "Save auto-approval settings",
+    dashboardSessions: "Sessions",
+    dashboardAction: "Action",
+    dashboardTitleLabel: "Title",
+    dashboardState: "State",
+    dashboardMode: "Mode",
+    dashboardRunStatus: "Run status",
+    dashboardMessages: "Messages",
+    dashboardSteps: "Steps",
+    dashboardPreview: "Preview",
+    detailUnavailable: "Session details are temporarily unavailable.",
+    detailNoTranscript: "No transcript content has been reconstructed yet.",
+    detailNoEvents: "No events have been recorded yet.",
+    detailMessageCount: "Messages",
+    detailEventCount: "Events",
+    detailMessagesView: "Message view",
+    detailFullEvents: "Full events",
+    transcriptUser: "user",
+    transcriptAssistant: "assistant",
+    transcriptBridgeObserved: "bridge / observed",
+    transcriptObserved: "observed",
+    transcriptBridge: "bridge",
+    transcriptReply: "reply",
+  };
 }

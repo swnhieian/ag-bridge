@@ -1,8 +1,8 @@
 # AG Bridge
 
-`AG Bridge` 是一个面向 VS Code / Antigravity 的扩展。它会启动一个轻量的本地 bridge 服务，把 Antigravity Language Server 通过稳定的 HTTP 和 SSE 接口暴露出来，方便做自动化、会话接管、前端联调和脚本集成。
+语言： [English](README.md) | [简体中文](README.zh-CN.md)
 
-English documentation is available in [README.md](README.md).
+`AG Bridge` 是一个面向 VS Code / Antigravity 的扩展。它会启动一个轻量的本地 bridge 服务，把 Antigravity Language Server 通过稳定的 HTTP 和 SSE 接口暴露出来，方便做自动化、会话接管、前端联调和脚本集成。
 
 ## 概览
 

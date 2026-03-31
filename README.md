@@ -1,8 +1,8 @@
 # AG Bridge
 
-`AG Bridge` is a VS Code / Antigravity extension that starts a lightweight local bridge service and exposes Antigravity Language Server through stable HTTP and SSE interfaces for automation, session takeover, frontend integration, and scripting.
+Language: [English](README.md) | [简体中文](README.zh-CN.md)
 
-Chinese documentation is available in [README.zh-CN.md](README.zh-CN.md).
+`AG Bridge` is a VS Code / Antigravity extension that starts a lightweight local bridge service and exposes Antigravity Language Server through stable HTTP and SSE interfaces for automation, session takeover, frontend integration, and scripting.
 
 ## Overview
 
@@ -176,7 +176,7 @@ The repository also ships a first-class Node CLI entrypoint at `bin/ag-bridge.js
 
 ## More Documentation
 
-- [Chinese README](README.zh-CN.md)
+- [简体中文说明](README.zh-CN.md)
 - [Changelog](CHANGELOG.md)
 - [构建与使用](docs/构建与使用.md)
 - [接口文档](docs/接口文档.md)
