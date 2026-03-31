@@ -3,6 +3,8 @@ import type * as VSCode from "vscode";
 import { BridgeHttpServer } from "./http-server.js";
 import type { AutoApprovalSettings, BridgeEvent, ServerStatus, SessionExport, SessionSnapshot } from "./types.js";
 
+const AUTO_APPROVAL_SETTINGS_STATE_KEY = "autoApprovalSettings";
+
 class ExtensionBridgeController {
   private server?: BridgeHttpServer;
   private lastStartError?: string;
@@ -22,6 +24,9 @@ class ExtensionBridgeController {
     this.output = vscode.window.createOutputChannel("AG Bridge");
     this.statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
     this.statusItem.command = "agBridge.openDashboard";
+    this.autoApprovalSettings = loadStoredAutoApprovalSettings(
+      this.context.workspaceState.get<Partial<AutoApprovalSettings> | undefined>(AUTO_APPROVAL_SETTINGS_STATE_KEY),
+    );
     this.statusItem.show();
     this.updateStatusBar();
   }
@@ -101,6 +106,7 @@ class ExtensionBridgeController {
       ...this.autoApprovalSettings,
       ...next,
     });
+    await this.context.workspaceState.update(AUTO_APPROVAL_SETTINGS_STATE_KEY, this.autoApprovalSettings);
 
     if (this.server?.running) {
       this.autoApprovalSettings = this.server.updateAutoApprovalSettings(this.autoApprovalSettings);
@@ -1011,6 +1017,12 @@ function normalizeAutoApprovalSettings(settings: Partial<AutoApprovalSettings>):
     browserActions: !!settings.browserActions,
     sendCommandInput: !!settings.sendCommandInput,
   };
+}
+
+function loadStoredAutoApprovalSettings(
+  stored: Partial<AutoApprovalSettings> | undefined,
+): AutoApprovalSettings {
+  return normalizeAutoApprovalSettings(stored ?? defaultAutoApprovalSettings());
 }
 
 function escapeHtml(value: string): string {
