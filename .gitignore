@@ -4,3 +4,5 @@ node_modules/
 *.vsix
 .ag-bridge-dev/
 .ag-bridge-sync-test/
+__pycache__/
+*.pyc
