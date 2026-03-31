@@ -1,0 +1,109 @@
+{
+  "name": "ag-bridge",
+  "displayName": "AG Bridge",
+  "version": "0.1.1",
+  "publisher": "weinan",
+  "author": {
+    "name": "weinan"
+  },
+  "description": "把 Antigravity Language Server 暴露为本地 HTTP/SSE bridge 的 VS Code 扩展。",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "main": "./extension.cjs",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0f766e",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "markdown": "github",
+  "qna": false,
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "antigravity",
+    "bridge",
+    "automation",
+    "agent",
+    "http",
+    "sse"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:agBridge.startServer",
+    "onCommand:agBridge.stopServer",
+    "onCommand:agBridge.showStatus",
+    "onCommand:agBridge.openDashboard"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "agBridge.startServer",
+        "title": "AG Bridge: 启动服务"
+      },
+      {
+        "command": "agBridge.stopServer",
+        "title": "AG Bridge: 停止服务"
+      },
+      {
+        "command": "agBridge.showStatus",
+        "title": "AG Bridge: 查看状态"
+      },
+      {
+        "command": "agBridge.openDashboard",
+        "title": "AG Bridge: 打开状态面板"
+      }
+    ],
+    "configuration": {
+      "title": "AG Bridge",
+      "properties": {
+        "agBridge.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "扩展激活后是否自动启动本地 bridge 服务。"
+        },
+        "agBridge.server.host": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "本地 bridge 服务绑定的主机地址。"
+        },
+        "agBridge.server.port": {
+          "type": "number",
+          "default": 9464,
+          "description": "本地 bridge 服务监听的 HTTP 端口。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "vscode:prepublish": "npm run build",
+    "package:vsix": "vsce package --allow-missing-repository",
+    "release:prepare": "npm run check && npm run build && npm run package:vsix",
+    "openvsx:create-namespace": "npx ovsx create-namespace $npm_package_publisher -p $OVSX_TOKEN",
+    "publish:openvsx": "npx ovsx publish -p $OVSX_TOKEN",
+    "publish:openvsx:vsix": "npx ovsx publish ./ag-bridge-$npm_package_version.vsix -p $OVSX_TOKEN",
+    "serve": "node dist/src/cli.js serve",
+    "cli": "node dist/src/cli.js"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "^1.10.0",
+    "@connectrpc/connect": "^1.6.0",
+    "@connectrpc/connect-node": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.18",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.6.2",
+    "typescript": "^5.8.3"
+  }
+}

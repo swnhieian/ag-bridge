@@ -1,0 +1,6 @@
+dist/
+node_modules/
+.DS_Store
+*.vsix
+.ag-bridge-dev/
+.ag-bridge-sync-test/
