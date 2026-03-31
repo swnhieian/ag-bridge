@@ -168,6 +168,32 @@ export class BridgeSession extends EventEmitter {
     });
   }
 
+  async syncFromHistory(): Promise<void> {
+    const history = await this.cascade.getHistory();
+    const nextRunStatus = toRunStatus(history.status);
+    this.refreshTrajectoryTiming(history.trajectory);
+
+    const steps = history.trajectory?.steps ?? [];
+    steps.forEach((step, index) => {
+      if (!step) {
+        return;
+      }
+      this.processPolledStep(step, index);
+    });
+
+    if (nextRunStatus !== this.runStatus) {
+      const previousStatus = this.runStatus;
+      this.runStatus = nextRunStatus;
+      this.pushEvent("cascade.status", {
+        status: nextRunStatus,
+        previousStatus,
+      });
+      if (previousStatus !== "idle" && nextRunStatus === "idle") {
+        this.pushEvent("cascade.done", {});
+      }
+    }
+  }
+
   private bindCascade(): void {
     this.cascade.on("status_change", (event: StatusChangeEvent) => {
       this.runStatus = event.status;

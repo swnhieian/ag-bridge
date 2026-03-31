@@ -164,6 +164,37 @@ export class Cascade extends EventEmitter {
         this.emitTextDeltas();
     }
 
+    private primeEmitStateFromCurrentTrajectory() {
+        const steps = this.state.trajectory?.steps || [];
+        this._lastStepCount = steps.length;
+
+        steps.forEach((step: Step, index: number) => {
+            if (!step) return;
+
+            this._stepStatusMap.set(index, step.status);
+
+            const runCommandPlain = (step as any).runCommand ||
+                                    (step.step?.case === "runCommand" ? step.step.value : null);
+            if (runCommandPlain) {
+                this.lastEmittedStdout[index] = runCommandPlain.stdout || "";
+                this.lastEmittedStderr[index] = runCommandPlain.stderr || "";
+            }
+
+            if (step.step?.case === "plannerResponse") {
+                const planner = step.step.value as any;
+                const response = planner.modifiedResponse || planner.response || "";
+                const thinking = planner.thinking || "";
+                this.lastEmittedText[index] = response;
+                this.lastEmittedThinking[index] = thinking;
+            }
+
+            const inlineFilePermission = (step.step?.value as any)?.filePermissionRequest;
+            if (step.requestedInteraction?.interaction?.case || inlineFilePermission) {
+                this.emittedInteractions.add(index);
+            }
+        });
+    }
+
     // ── Status Change ──
 
     private emitStatusChange() {
@@ -652,6 +683,7 @@ export class Cascade extends EventEmitter {
         // Update local state with the fetched trajectory
         if (response.trajectory) {
             this.state.trajectory = response.trajectory;
+            this.primeEmitStateFromCurrentTrajectory();
         }
 
         return response;

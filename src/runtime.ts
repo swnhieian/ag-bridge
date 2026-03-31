@@ -152,7 +152,7 @@ export class BridgeRuntime {
     const id = persisted?.id ?? this.allocateSessionId();
     const nextWorkspacePath = workspacePath ?? persisted?.workspacePath;
 
-    return this.registerLiveSession(
+    const session = this.registerLiveSession(
       new BridgeSession({
         id,
         mode: "connect",
@@ -163,6 +163,8 @@ export class BridgeRuntime {
         getAutoApprovalSettings: () => this.autoApprovalSettings,
       }),
     );
+    await session.syncFromHistory();
+    return session;
   }
 
   async resumeSession(id: string, workspacePath?: string): Promise<BridgeSession> {
