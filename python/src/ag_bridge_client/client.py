@@ -79,18 +79,57 @@ class BridgeClient:
         mode: str = "connect",
         workspace_path: str | None = None,
         model: str | None = None,
+        session_id: str | None = None,
     ) -> JsonDict:
         body: JsonDict = {"mode": mode}
         if workspace_path:
             body["workspacePath"] = workspace_path
         if model:
             body["model"] = model
+        if session_id:
+            body["sessionId"] = session_id
         payload = self._request_json("POST", "/sessions", body)
         return dict(payload["session"])
 
     def get_session(self, session_id: str) -> JsonDict:
         payload = self._request_json("GET", f"/sessions/{session_id}")
         return dict(payload["session"])
+
+    def get_last_session(self) -> JsonDict:
+        sessions = self.list_sessions()
+        if not sessions:
+            raise BridgeClientError("No sessions available.")
+        return dict(sessions[0])
+
+    def resume_session(self, session_id: str, workspace_path: str | None = None) -> JsonDict:
+        body: JsonDict = {}
+        if workspace_path:
+            body["workspacePath"] = workspace_path
+        payload = self._request_json("POST", f"/sessions/{session_id}/resume", body)
+        return dict(payload["session"])
+
+    def ensure_live_session(self, session_id: str, workspace_path: str | None = None) -> JsonDict:
+        session = self.get_session(session_id)
+        if session.get("live"):
+            return session
+        return self.resume_session(session_id, workspace_path=workspace_path)
+
+    def resolve_session(
+        self,
+        *,
+        session_id: str | None = None,
+        use_last: bool = False,
+        workspace_path: str | None = None,
+    ) -> JsonDict:
+        if session_id and use_last:
+            raise BridgeClientError("Use either a session id or --last, not both.")
+        if session_id:
+            session = self.get_session(session_id)
+        elif use_last:
+            session = self.get_last_session()
+        else:
+            raise BridgeClientError("Missing session id. Pass a session id or use --last.")
+        return self.ensure_live_session(str(session["id"]), workspace_path=workspace_path)
 
     def get_events(self, session_id: str, since: int = 0, limit: int | None = None) -> list[JsonDict]:
         query = _query_string({"since": since or None, "limit": limit})
@@ -156,20 +195,35 @@ class BridgeClient:
         mode: str = "connect",
         workspace_path: str | None = None,
         model: str | None = None,
+        session_id: str | None = None,
+        use_last: bool = False,
+        create_session_id: str | None = None,
         poll_interval: float = 0.5,
     ) -> JsonDict:
-        session = self.create_session(mode=mode, workspace_path=workspace_path, model=model)
-        session_id = str(session["id"])
+        if session_id and create_session_id:
+            raise BridgeClientError("Use either an existing session or a new session-id, not both.")
+
+        session = (
+            self.resolve_session(session_id=session_id, use_last=use_last, workspace_path=workspace_path)
+            if session_id or use_last
+            else self.create_session(
+                mode=mode,
+                workspace_path=workspace_path,
+                model=model,
+                session_id=create_session_id,
+            )
+        )
+        active_session_id = str(session["id"])
         since = int(session.get("eventCount", 0))
 
-        self.send_message(session_id, text, model=model)
+        self.send_message(active_session_id, text, model=model)
 
         all_events: list[JsonDict] = []
         approval_required = False
         error_message: str | None = None
 
         while True:
-            events = self.get_events(session_id, since=since)
+            events = self.get_events(active_session_id, since=since)
             if events:
                 all_events.extend(events)
                 since = int(events[-1]["seq"])
@@ -183,7 +237,7 @@ class BridgeClient:
                     error_message = str(event.get("data", {}).get("message", "Unknown error"))
                     break
                 if event_type == "cascade.done":
-                    snapshot = self.get_session(session_id)
+                    snapshot = self.get_session(active_session_id)
                     return {
                         "session": snapshot,
                         "events": all_events,
@@ -193,7 +247,7 @@ class BridgeClient:
                     }
 
             if approval_required:
-                snapshot = self.get_session(session_id)
+                snapshot = self.get_session(active_session_id)
                 return {
                     "session": snapshot,
                     "events": all_events,

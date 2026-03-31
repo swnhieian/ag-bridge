@@ -887,25 +887,25 @@ function parseSseMessage(rawMessage: string): { event: string; data: any } | nul
 function printHelp(): void {
   const help = `
 Usage:
-  node dist/src/cli.js [--base-url URL] serve [--host 127.0.0.1] [--port 9464] [--data-dir PATH]
-  node dist/src/cli.js [--base-url URL] status [--json]
-  node dist/src/cli.js [--base-url URL] ag:list [--workspace PATH] [--json]
-  node dist/src/cli.js [--base-url URL] ag:attach <cascadeId> [--workspace PATH]
-  node dist/src/cli.js [--base-url URL] ag:sync [--workspace PATH] [--json]
-  node dist/src/cli.js [--base-url URL] list-models [--workspace PATH] [--json]
-  node dist/src/cli.js [--base-url URL] session:create [--mode connect|launch] [--workspace PATH] [--model MODEL] [--session-id ID]
-  node dist/src/cli.js [--base-url URL] session:list [--json]
-  node dist/src/cli.js [--base-url URL] session:get <sessionId>
-  node dist/src/cli.js [--base-url URL] send <sessionId> <text> [--model MODEL]
-  node dist/src/cli.js [--base-url URL] events <sessionId> [--since N] [--limit N] [--json]
-  node dist/src/cli.js [--base-url URL] stream <sessionId>
-  node dist/src/cli.js [--base-url URL] cancel <sessionId>
-  node dist/src/cli.js [--base-url URL] approve <sessionId> <stepIndex> [--scope once|conversation]
-  node dist/src/cli.js [--base-url URL] export <sessionId>
-  node dist/src/cli.js [--base-url URL] delete <sessionId>
-  node dist/src/cli.js [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL]
-  node dist/src/cli.js [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL]
-  node dist/src/cli.js [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL]
+  node ./bin/ag-bridge.js [--base-url URL] serve [--host 127.0.0.1] [--port 9464] [--data-dir PATH]
+  node ./bin/ag-bridge.js [--base-url URL] status [--json]
+  node ./bin/ag-bridge.js [--base-url URL] ag:list [--workspace PATH] [--json]
+  node ./bin/ag-bridge.js [--base-url URL] ag:attach <cascadeId> [--workspace PATH]
+  node ./bin/ag-bridge.js [--base-url URL] ag:sync [--workspace PATH] [--json]
+  node ./bin/ag-bridge.js [--base-url URL] list-models [--workspace PATH] [--json]
+  node ./bin/ag-bridge.js [--base-url URL] session:create [--mode connect|launch] [--workspace PATH] [--model MODEL] [--session-id ID]
+  node ./bin/ag-bridge.js [--base-url URL] session:list [--json]
+  node ./bin/ag-bridge.js [--base-url URL] session:get <sessionId>
+  node ./bin/ag-bridge.js [--base-url URL] send <sessionId> <text> [--model MODEL]
+  node ./bin/ag-bridge.js [--base-url URL] events <sessionId> [--since N] [--limit N] [--json]
+  node ./bin/ag-bridge.js [--base-url URL] stream <sessionId>
+  node ./bin/ag-bridge.js [--base-url URL] cancel <sessionId>
+  node ./bin/ag-bridge.js [--base-url URL] approve <sessionId> <stepIndex> [--scope once|conversation]
+  node ./bin/ag-bridge.js [--base-url URL] export <sessionId>
+  node ./bin/ag-bridge.js [--base-url URL] delete <sessionId>
+  node ./bin/ag-bridge.js [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL]
+  node ./bin/ag-bridge.js [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL]
+  node ./bin/ag-bridge.js [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL]
 `;
   process.stdout.write(help.trimStart());
 }

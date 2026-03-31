@@ -248,7 +248,7 @@ View the models currently returned by the language server:
 查看当前语言服务器实际返回的模型：
 
 ```bash
-node dist/src/cli.js list-models
+node ./bin/ag-bridge.js list-models
 ```
 
 Resume the most recent session:
@@ -256,20 +256,39 @@ Resume the most recent session:
 恢复最近一个 session：
 
 ```bash
-node dist/src/cli.js resume --last
+node ./bin/ag-bridge.js resume --last
 ```
+
+The repository also ships a first-class Node CLI entrypoint at `bin/ag-bridge.js`, so source builds, local scripts, and CI can reuse the same command surface without reaching into `dist/` directly.
+
+仓库现在也内置了一个正式的 Node CLI 入口 `bin/ag-bridge.js`，这样无论是源码环境、本地脚本还是 CI，都可以直接复用同一套命令，而不需要显式依赖 `dist/` 路径。
 
 ## More Documentation
 
-- `docs/构建与使用.md`
-- `docs/接口文档.md`
-- `docs/设计方案.md`
-- `docs/architecture.md`
-- `docs/api.md`
+- [Changelog](CHANGELOG.md)
+- [构建与使用](docs/构建与使用.md)
+- [接口文档](docs/接口文档.md)
+- [设计方案](docs/设计方案.md)
+- [Architecture](docs/architecture.md)
+- [API Reference](docs/api.md)
 
 Release history is maintained in `CHANGELOG.md`.
 
 版本更新记录维护在 `CHANGELOG.md`。
+
+## Automation
+
+GitHub Actions CI now validates the extension build, VSIX packaging, and Python CLI smoke checks on pushes and pull requests.
+
+现在仓库已经带上 GitHub Actions CI，会在 push 和 pull request 时校验扩展构建、VSIX 打包和 Python CLI 的基本可用性。
+
+Publishing to `Open VSX` can be automated by pushing a tag like `v0.1.1`, after configuring the `OVSX_TOKEN` repository secret.
+
+在仓库里配置好 `OVSX_TOKEN` 这个 repository secret 之后，推送类似 `v0.1.1` 这样的 tag，就可以自动触发发布到 `Open VSX`。
+
+The workflows live in `.github/workflows/ci.yml` and `.github/workflows/release-openvsx.yml`.
+
+对应的工作流文件分别在 `.github/workflows/ci.yml` 和 `.github/workflows/release-openvsx.yml`。
 
 ## Developer Notes
 
@@ -277,8 +296,8 @@ If you are here for source builds, repackaging, or publishing to `Open VSX`, sta
 
 如果你是来做源码构建、重新打包或发布到 `Open VSX` 的，建议直接从下面这些文档开始。
 
-- `docs/构建与使用.md`
-- `docs/接口文档.md`
+- [构建与使用](docs/构建与使用.md)
+- [接口文档](docs/接口文档.md)
 
 ## Repository Ownership Note
 

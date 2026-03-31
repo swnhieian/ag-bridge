@@ -4,11 +4,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ag-bridge-client"
-version = "0.2.1"
+version = "0.1.1"
 description = "Python client for the local AG Bridge HTTP API"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/swnhieian/ag-bridge"
+Repository = "https://github.com/swnhieian/ag-bridge"
+Issues = "https://github.com/swnhieian/ag-bridge/issues"
 
 [project.scripts]
 ag-bridge-py = "ag_bridge_client.cli:main"

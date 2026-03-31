@@ -1,8 +1,12 @@
+.github/**
+.venv/**
+bin/**
 src/**
 python/**
 .ag-bridge-dev/**
 .ag-bridge-sync-test/**
 *.vsix
+.DS_Store
 tsconfig.json
 package-lock.json
 

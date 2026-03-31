@@ -486,7 +486,7 @@ Example:
 
 ```bash
 npm run build
-node dist/src/cli.js serve
+node ./bin/ag-bridge.js serve
 ```
 
 Options:
@@ -501,9 +501,9 @@ Creates a new session.
 Examples:
 
 ```bash
-node dist/src/cli.js session:create
-node dist/src/cli.js session:create --mode launch --workspace /Users/me/project
-node dist/src/cli.js session:create --workspace /Users/me/project --session-id demo_session_001
+node ./bin/ag-bridge.js session:create
+node ./bin/ag-bridge.js session:create --mode launch --workspace /Users/me/project
+node ./bin/ag-bridge.js session:create --workspace /Users/me/project --session-id demo_session_001
 ```
 
 ### `resume [sessionId]`
@@ -513,8 +513,8 @@ Resumes an existing session and enters interactive chat.
 Examples:
 
 ```bash
-node dist/src/cli.js resume demo_session_001
-node dist/src/cli.js resume --last
+node ./bin/ag-bridge.js resume demo_session_001
+node ./bin/ag-bridge.js resume --last
 ```
 
 ### `list-models`
@@ -524,9 +524,9 @@ Lists models currently exposed by the connected LS.
 Examples:
 
 ```bash
-node dist/src/cli.js list-models
-node dist/src/cli.js list-models --workspace /Users/me/project
-node dist/src/cli.js list-models --json
+node ./bin/ag-bridge.js list-models
+node ./bin/ag-bridge.js list-models --workspace /Users/me/project
+node ./bin/ag-bridge.js list-models --json
 ```
 
 ### `session:list`
@@ -586,3 +586,25 @@ Useful options:
   - override the model for this turn
 - `--workspace <path>`
   - prefer a workspace when creating or resuming
+
+## Python CLI
+
+The repository also ships a local Python CLI that targets the same HTTP API surface. It is intended for local scripts and automation, not a separate remote publishing flow.
+
+Install locally:
+
+```bash
+pip install -e python
+```
+
+Examples:
+
+```bash
+ag-bridge-py list-models
+ag-bridge-py session-create --session-id demo_session_001
+ag-bridge-py ask "Please reply with OK only." --thinking off
+ag-bridge-py ask "Continue this conversation" --session demo_session_001
+ag-bridge-py resume --last
+ag-bridge-py chat --last
+ag-bridge-py stream demo_session_001 --thinking off
+```

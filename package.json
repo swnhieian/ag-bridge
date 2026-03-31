@@ -3,6 +3,14 @@
   "displayName": "AG Bridge",
   "version": "0.1.1",
   "publisher": "weinan",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/swnhieian/ag-bridge.git"
+  },
+  "homepage": "https://github.com/swnhieian/ag-bridge",
+  "bugs": {
+    "url": "https://github.com/swnhieian/ag-bridge/issues"
+  },
   "author": {
     "name": "weinan"
   },
@@ -10,6 +18,9 @@
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
   "main": "./extension.cjs",
+  "bin": {
+    "ag-bridge": "./bin/ag-bridge.js"
+  },
   "icon": "images/icon.png",
   "galleryBanner": {
     "color": "#0f766e",

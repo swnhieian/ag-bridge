@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Added GitHub Actions CI and tag-based Open VSX release automation.
+- Added a first-class Node CLI entrypoint through `bin/ag-bridge.js`.
+- Expanded the Python SDK / CLI to cover session resume, stream, chat, ask session reuse, and Node-aligned command aliases.
+- Restored repository-aware documentation links now that the GitHub repository metadata is configured.
+
+- 新增 GitHub Actions CI，以及基于 tag 的 Open VSX 自动发布流程。
+- 通过 `bin/ag-bridge.js` 提供了更明确的 Node CLI 入口。
+- 扩展了 Python SDK / CLI，补齐 session resume、stream、chat、ask 复用 session，以及与 Node 对齐的命令别名。
+- 在配置好 GitHub 仓库元数据之后，恢复了 README 中面向仓库的文档链接。
+
 ## 0.1.1
 
 Enhanced session management for bridge-driven workflows.

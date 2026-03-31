@@ -42,6 +42,16 @@ ag-bridge-py model-list
 ag-bridge-py model-list --workspace /绝对路径/项目
 ag-bridge-py ag-session-list
 ag-bridge-py ag-session-sync
-ag-bridge-py ask "请只回复 OK" --model auto
-ag-bridge-py session-create --model claude-4-sonnet
+ag-bridge-py session-create --model claude-4-sonnet --session-id demo_session_001
+ag-bridge-py ask "请只回复 OK" --model auto --thinking off
+ag-bridge-py ask "继续这个会话" --session demo_session_001
+ag-bridge-py resume --last
+ag-bridge-py chat --last
+ag-bridge-py stream demo_session_001 --thinking off
 ```
+
+补充说明：
+
+- 这套 Python CLI 直接调用本地 AG Bridge HTTP API
+- 命令面尽量和仓库里的 Node CLI 保持一致
+- 当前它只作为仓库内的本地工具维护，不走单独的 PyPI 发布流程
