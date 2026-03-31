@@ -182,9 +182,20 @@ If you want a single executable instead of running through `node`, build a nativ
 npm run package:cli:binary
 ```
 
-The generated file is written to `artifacts/cli/`, for example `artifacts/cli/ag-bridge-cli-darwin-arm64`.
+This now generates both a raw executable and a compressed distribution archive under `artifacts/cli/`, for example:
 
-This binary is currently built for the host platform and architecture of the machine that runs the packaging command.
+- `artifacts/cli/ag-bridge-cli-darwin-arm64`
+- `artifacts/cli/ag-bridge-cli-0.1.1-darwin-arm64.tar.gz`
+
+To build the common release set in one go:
+
+```bash
+npm run package:cli:binary:all
+```
+
+The script supports `darwin-x64`, `darwin-arm64`, `linux-x64`, `linux-arm64`, `win32-x64`, and `win32-arm64` through `--target` or `--targets`.
+
+`package:cli:binary` defaults to the current host target, while `package:cli:binary:all` builds a mainstream multi-platform set for release use.
 
 ## More Documentation
 

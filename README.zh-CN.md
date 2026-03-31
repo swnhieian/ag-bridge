@@ -182,9 +182,20 @@ node ./bin/ag-bridge.js resume --last
 npm run package:cli:binary
 ```
 
-生成后的文件会放在 `artifacts/cli/` 目录下，例如 `artifacts/cli/ag-bridge-cli-darwin-arm64`。
+现在这条命令会同时生成“原始可执行文件”和“压缩后的分发包”，产物都在 `artifacts/cli/`，例如：
 
-当前这条打包链路生成的是“当前执行打包命令的机器”的平台和架构对应的二进制。
+- `artifacts/cli/ag-bridge-cli-darwin-arm64`
+- `artifacts/cli/ag-bridge-cli-0.1.1-darwin-arm64.tar.gz`
+
+如果要一次性生成常用的多平台版本，也可以执行：
+
+```bash
+npm run package:cli:binary:all
+```
+
+脚本支持通过 `--target` 或 `--targets` 指定 `darwin-x64`、`darwin-arm64`、`linux-x64`、`linux-arm64`、`win32-x64`、`win32-arm64`。
+
+`package:cli:binary` 默认生成当前机器对应的平台和架构，`package:cli:binary:all` 则适合做常用发布集。
 
 ## 更多文档
 

@@ -100,6 +100,7 @@
     "vscode:prepublish": "npm run build",
     "package:vsix": "vsce package --allow-missing-repository",
     "package:cli:binary": "npm run build && node ./scripts/package-cli-binary.mjs",
+    "package:cli:binary:all": "npm run build && node ./scripts/package-cli-binary.mjs --targets common",
     "release:prepare": "npm run check && npm run build && npm run package:vsix",
     "openvsx:create-namespace": "npx ovsx create-namespace $npm_package_publisher -p $OVSX_TOKEN",
     "publish:openvsx": "npx ovsx publish -p $OVSX_TOKEN",
