@@ -39,6 +39,8 @@ interface StepTimingSummary {
   latestTimestamp?: string;
 }
 
+const FALLBACK_POLL_INTERVAL_MS = 250;
+
 export class BridgeSession extends EventEmitter {
   public readonly id: string;
   public readonly cascadeId: string;
@@ -75,6 +77,7 @@ export class BridgeSession extends EventEmitter {
   private pollingFallbackActive = false;
   private pollingInFlight = false;
   private pollingTimer?: NodeJS.Timeout;
+  private pollingGraceUntil = 0;
 
   constructor(options: SessionOptions) {
     super();
@@ -132,6 +135,7 @@ export class BridgeSession extends EventEmitter {
     await this.cascade.sendMessage(text, this.toCascadeSendOptions());
     this.messageCount += 1;
     this.updateTitleFromText(text);
+    this.kickPollingFallback();
     this.pushEvent("message.sent", {
       text,
       ...(this.requestedModel ? { requestedModel: this.requestedModel } : {}),
@@ -143,6 +147,7 @@ export class BridgeSession extends EventEmitter {
     await this.cascade.sendMessage(text, this.toCascadeSendOptions(override));
     this.messageCount += 1;
     this.updateTitleFromText(text);
+    this.kickPollingFallback();
     this.pushEvent("message.sent", {
       text,
       requestedModel: formatRequestedModel(override ?? this.requestedModelChoice) ?? null,
@@ -151,6 +156,7 @@ export class BridgeSession extends EventEmitter {
 
   async cancel(): Promise<void> {
     await this.cascade.cancel();
+    this.kickPollingFallback();
     this.pushEvent("session.cancel.requested", {});
   }
 
@@ -162,6 +168,7 @@ export class BridgeSession extends EventEmitter {
 
     await approval.request.approve(scope);
     this.pendingApprovals.delete(stepIndex);
+    this.kickPollingFallback();
     this.pushEvent("cascade.approval.resolved", {
       stepIndex,
       scope,
@@ -309,14 +316,12 @@ export class BridgeSession extends EventEmitter {
     }
 
     this.pollingFallbackActive = true;
+    this.extendPollingGrace();
     this.pushEvent("cascade.fallback.polling", {
       reason,
-      intervalMs: 1000,
+      intervalMs: FALLBACK_POLL_INTERVAL_MS,
     });
-    void this.pollHistory();
-    this.pollingTimer = setInterval(() => {
-      void this.pollHistory();
-    }, 1000);
+    this.scheduleNextPoll(0);
   }
 
   private async pollHistory(): Promise<void> {
@@ -355,7 +360,38 @@ export class BridgeSession extends EventEmitter {
       });
     } finally {
       this.pollingInFlight = false;
+      if (this.shouldContinuePolling()) {
+        this.scheduleNextPoll(FALLBACK_POLL_INTERVAL_MS);
+      }
     }
+  }
+
+  private kickPollingFallback(): void {
+    if (!this.pollingFallbackActive) {
+      return;
+    }
+    this.extendPollingGrace();
+    this.scheduleNextPoll(0);
+  }
+
+  private extendPollingGrace(durationMs = 5000): void {
+    this.pollingGraceUntil = Math.max(this.pollingGraceUntil, Date.now() + Math.max(0, durationMs));
+  }
+
+  private scheduleNextPoll(delayMs: number): void {
+    if (!this.pollingFallbackActive || this.pollingTimer) {
+      return;
+    }
+
+    this.pollingTimer = setTimeout(() => {
+      this.pollingTimer = undefined;
+      void this.pollHistory();
+    }, Math.max(0, delayMs));
+  }
+
+  private shouldContinuePolling(): boolean {
+    return this.pollingFallbackActive
+      && (this.runStatus !== "idle" || this.pendingApprovals.size > 0 || Date.now() < this.pollingGraceUntil);
   }
 
   private processPolledStep(step: Step, index: number): void {

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -36,91 +35,90 @@ def execute_turn(
     seen_stdout_by_step: dict[int, str] = {}
     seen_stderr_by_step: dict[int, str] = {}
 
-    while True:
-        events = client.get_events(active_session_id, since=since)
-        if events:
-            since = int(events[-1]["seq"])
+    for message in client.stream_events(active_session_id, since=since):
+        if message.event != "event":
+            continue
 
-        for event in events:
-            event_type = str(event.get("type", ""))
-            data = event.get("data", {})
-            if not isinstance(data, dict):
-                data = {}
+        event = message.data
+        event_type = str(event.get("type", ""))
+        data = event.get("data", {})
+        if not isinstance(data, dict):
+            data = {}
 
-            if event_type == "cascade.status":
-                print(
-                    f"[status] {data.get('previousStatus')} -> {data.get('status')}",
-                    file=sys.stderr,
-                )
-                continue
+        if event_type == "cascade.status":
+            print(
+                f"[status] {data.get('previousStatus')} -> {data.get('status')}",
+                file=sys.stderr,
+            )
+            continue
 
-            if event_type == "cascade.step.new":
-                print(
-                    f"[step] #{data.get('stepIndex')} {data.get('stepType')} {data.get('description')}",
-                    file=sys.stderr,
-                )
-                continue
+        if event_type == "cascade.step.new":
+            print(
+                f"[step] #{data.get('stepIndex')} {data.get('stepType')} {data.get('description')}",
+                file=sys.stderr,
+            )
+            continue
 
-            if event_type == "cascade.step.updated":
-                print(
-                    f"[step:update] #{data.get('stepIndex')} {data.get('previousStatus')} -> {data.get('status')}",
-                    file=sys.stderr,
-                )
-                continue
+        if event_type == "cascade.step.updated":
+            print(
+                f"[step:update] #{data.get('stepIndex')} {data.get('previousStatus')} -> {data.get('status')}",
+                file=sys.stderr,
+            )
+            continue
 
-            if event_type == "cascade.text.delta":
+        if event_type == "cascade.text.delta":
+            _write_delta(
+                store=seen_assistant_step_text,
+                step_index=_step_index(data),
+                current_text=_as_text(data.get("fullText")),
+                fallback_delta=_as_text(data.get("delta")),
+                out=sys.stdout,
+            )
+            continue
+
+        if event_type == "cascade.thinking.delta":
+            if show_thinking:
                 _write_delta(
-                    store=seen_assistant_step_text,
+                    store=seen_thinking_by_step,
                     step_index=_step_index(data),
                     current_text=_as_text(data.get("fullText")),
                     fallback_delta=_as_text(data.get("delta")),
-                    out=sys.stdout,
+                    out=sys.stderr,
                 )
-                continue
+            continue
 
-            if event_type == "cascade.thinking.delta":
-                if show_thinking:
-                    _write_delta(
-                        store=seen_thinking_by_step,
-                        step_index=_step_index(data),
-                        current_text=_as_text(data.get("fullText")),
-                        fallback_delta=_as_text(data.get("delta")),
-                        out=sys.stderr,
-                    )
-                continue
+        if event_type == "cascade.command.output":
+            stream = _as_text(data.get("stream")) or "stdout"
+            out = sys.stderr if stream == "stderr" else sys.stdout
+            store = seen_stderr_by_step if stream == "stderr" else seen_stdout_by_step
+            _write_delta(
+                store=store,
+                step_index=_step_index(data),
+                current_text=_as_text(data.get("fullText")),
+                fallback_delta=_as_text(data.get("delta")),
+                out=out,
+            )
+            continue
 
-            if event_type == "cascade.command.output":
-                stream = _as_text(data.get("stream")) or "stdout"
-                out = sys.stderr if stream == "stderr" else sys.stdout
-                store = seen_stderr_by_step if stream == "stderr" else seen_stdout_by_step
-                _write_delta(
-                    store=store,
-                    step_index=_step_index(data),
-                    current_text=_as_text(data.get("fullText")),
-                    fallback_delta=_as_text(data.get("delta")),
-                    out=out,
-                )
-                continue
+        if event_type == "cascade.approval.needed":
+            print(
+                f"\n[approval] step={data.get('stepIndex')} type={data.get('approvalType')} {data.get('description')}",
+                file=sys.stderr,
+            )
+            session = client.get_session(active_session_id)
+            return TurnResult(state="approval", session=session)
 
-            if event_type == "cascade.approval.needed":
-                print(
-                    f"\n[approval] step={data.get('stepIndex')} type={data.get('approvalType')} {data.get('description')}",
-                    file=sys.stderr,
-                )
-                session = client.get_session(active_session_id)
-                return TurnResult(state="approval", session=session)
+        if event_type == "cascade.error":
+            print(f"\n[error] {data.get('message')}", file=sys.stderr)
+            session = client.get_session(active_session_id)
+            return TurnResult(state="error", session=session)
 
-            if event_type == "cascade.error":
-                print(f"\n[error] {data.get('message')}", file=sys.stderr)
-                session = client.get_session(active_session_id)
-                return TurnResult(state="error", session=session)
+        if event_type == "cascade.done":
+            print("", file=sys.stdout)
+            session = client.get_session(active_session_id)
+            return TurnResult(state="done", session=session)
 
-            if event_type == "cascade.done":
-                print("", file=sys.stdout)
-                session = client.get_session(active_session_id)
-                return TurnResult(state="done", session=session)
-
-        time.sleep(poll_interval)
+    raise BridgeClientError("SSE stream closed before the turn reached a terminal event.")
 
 
 def stream_session(

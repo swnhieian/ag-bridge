@@ -253,13 +253,16 @@ async function runEvents(args: string[]): Promise<void> {
 }
 
 async function runStream(args: string[]): Promise<void> {
-  const sessionId = requireArg(args[0], "session id");
+  const autoApprove = args.includes("--auto-approve");
+  const positionalArgs = stripSwitch(args, "--auto-approve");
+  const sessionId = requireArg(positionalArgs[0], "session id");
   const session = await ensureLiveSession(sessionId);
   await streamSession(session.id, {
     showThinking: true,
     showLifecycle: true,
-    stopOnApproval: false,
+    stopOnApproval: !autoApprove,
     stopOnDone: false,
+    autoApprove,
   });
 }
 
@@ -296,6 +299,7 @@ async function runAsk(args: string[]): Promise<void> {
   const selectedSessionId = readFlag(args, "--session");
   const useLast = args.includes("--last");
   const createIfMissing = args.includes("--create-if-missing");
+  const autoApprove = args.includes("--auto-approve");
   const showThinking = readFlag(args, "--thinking") !== "off";
 
   if (selectedSessionId && useLast) {
@@ -315,7 +319,8 @@ async function runAsk(args: string[]): Promise<void> {
     ),
     "--last",
   );
-  const text = requireArg(positionalArgs.join(" "), "message text");
+  const filteredPositionalArgs = stripSwitch(positionalArgs, "--auto-approve");
+  const text = requireArg(filteredPositionalArgs.join(" "), "message text");
   let session: SessionSnapshot;
 
   if (selectedSessionId || useLast) {
@@ -338,7 +343,7 @@ async function runAsk(args: string[]): Promise<void> {
   }
 
   process.stderr.write(`[session] ${session.id} cascade=${session.cascadeId}\n`);
-  await executeTurn(session.id, text, { showThinking, requestedModel });
+  await executeTurn(session.id, text, { showThinking, requestedModel, autoApprove });
 }
 
 async function runChat(args: string[]): Promise<void> {
@@ -348,6 +353,7 @@ async function runChat(args: string[]): Promise<void> {
   const selectedSessionId = readFlag(args, "--session");
   const useLast = args.includes("--last");
   const createIfMissing = args.includes("--create-if-missing");
+  const autoApprove = args.includes("--auto-approve");
   const showThinking = readFlag(args, "--thinking") !== "off";
 
   if (selectedSessionId && useLast) {
@@ -380,6 +386,7 @@ async function runChat(args: string[]): Promise<void> {
     workspacePath,
     requestedModel,
     showThinking,
+    autoApprove,
   });
 }
 
@@ -389,11 +396,13 @@ async function runResume(args: string[]): Promise<void> {
   const showThinking = readFlag(args, "--thinking") !== "off";
   const useLast = args.includes("--last");
   const createIfMissing = args.includes("--create-if-missing");
+  const autoApprove = args.includes("--auto-approve");
   const positionalArgs = stripSwitch(
     stripSwitch(stripFlags(args, "--workspace", "--model", "--thinking"), "--create-if-missing"),
     "--last",
   );
-  const requestedSessionId = positionalArgs[0];
+  const filteredPositionalArgs = stripSwitch(positionalArgs, "--auto-approve");
+  const requestedSessionId = filteredPositionalArgs[0];
 
   if (requestedSessionId && useLast) {
     throw new Error("Use either <sessionId> or --last, not both.");
@@ -412,6 +421,7 @@ async function runResume(args: string[]): Promise<void> {
     workspacePath: workspacePath ?? session.workspacePath,
     requestedModel: requestedModel ?? session.requestedModel,
     showThinking,
+    autoApprove,
   });
 }
 
@@ -421,12 +431,14 @@ async function openInteractiveChat(
     workspacePath?: string;
     requestedModel?: string;
     showThinking: boolean;
+    autoApprove: boolean;
   },
 ): Promise<void> {
   let currentSessionId = options.currentSessionId;
   const workspacePath = options.workspacePath;
   let requestedModel = options.requestedModel;
   let showThinking = options.showThinking;
+  const autoApprove = options.autoApprove;
   const rl = createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -467,6 +479,7 @@ async function openInteractiveChat(
     await executeTurn(currentSessionId, answer, {
       showThinking,
       requestedModel,
+      autoApprove,
     });
   }
 
@@ -618,6 +631,7 @@ async function executeTurn(
   options: {
     showThinking: boolean;
     requestedModel?: string;
+    autoApprove: boolean;
   },
 ): Promise<void> {
   const snapshot = await ensureLiveSession(sessionId);
@@ -628,8 +642,9 @@ async function executeTurn(
     since,
     showThinking: options.showThinking,
     showLifecycle: true,
-    stopOnApproval: true,
+    stopOnApproval: !options.autoApprove,
     stopOnDone: true,
+    autoApprove: options.autoApprove,
   });
 
   await requestJson("POST", `/sessions/${encodeURIComponent(activeSessionId)}/messages`, {
@@ -653,6 +668,7 @@ async function streamSession(
     showLifecycle: boolean;
     stopOnApproval: boolean;
     stopOnDone: boolean;
+    autoApprove: boolean;
   },
 ): Promise<"done" | "approval" | "error" | "closed"> {
   const controller = new AbortController();
@@ -712,6 +728,18 @@ async function streamSession(
           process.stderr.write(
             `\n[approval] step=${String(data.stepIndex)} type=${String(data.approvalType)} ${String(data.description)}\n`,
           );
+          if (options.autoApprove) {
+            try {
+              await approveStep(sessionId, String(data.stepIndex));
+              process.stderr.write(`[approval:auto] approved step ${String(data.stepIndex)} (once)\n`);
+            } catch (error) {
+              process.stderr.write(`\n[error] ${stringifyError(error)}\n`);
+              state = "error";
+              controller.abort();
+              return true;
+            }
+            break;
+          }
           if (options.stopOnApproval) {
             state = "approval";
             controller.abort();
@@ -750,6 +778,14 @@ async function runJson(method: string, path: string, body?: unknown): Promise<vo
   process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
 }
 
+async function approveStep(sessionId: string, stepIndex: string, scope: "once" | "conversation" = "once"): Promise<void> {
+  await requestJson(
+    "POST",
+    `/sessions/${encodeURIComponent(sessionId)}/approvals/${encodeURIComponent(stepIndex)}/approve`,
+    { scope },
+  );
+}
+
 async function requestJson(method: string, path: string, body?: unknown): Promise<any> {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
@@ -765,6 +801,10 @@ async function requestJson(method: string, path: string, body?: unknown): Promis
     throw new Error(parsed.error || `HTTP ${response.status}`);
   }
   return parsed;
+}
+
+function stringifyError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function createSession(
@@ -884,20 +924,10 @@ async function consumeEventStream(
     for await (const chunk of Readable.fromWeb(response.body as any)) {
       buffer += decoder.decode(chunk, { stream: true });
 
-      while (true) {
-        const boundary = buffer.indexOf("\n\n");
-        if (boundary === -1) {
-          break;
-        }
+      const drained = drainSseMessages(buffer);
+      buffer = drained.rest;
 
-        const rawMessage = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-
-        const parsed = parseSseMessage(rawMessage);
-        if (!parsed) {
-          continue;
-        }
-
+      for (const parsed of drained.messages) {
         const shouldStop = await onEvent(parsed.event, parsed.data);
         if (shouldStop) {
           return;
@@ -910,6 +940,29 @@ async function consumeEventStream(
     }
     throw error;
   }
+}
+
+function drainSseMessages(buffer: string): {
+  messages: Array<{ event: string; data: any }>;
+  rest: string;
+} {
+  const messages: Array<{ event: string; data: any }> = [];
+  let rest = buffer;
+  let boundary = rest.indexOf("\n\n");
+
+  while (boundary !== -1) {
+    const rawMessage = rest.slice(0, boundary);
+    rest = rest.slice(boundary + 2);
+
+    const parsed = parseSseMessage(rawMessage);
+    if (parsed) {
+      messages.push(parsed);
+    }
+
+    boundary = rest.indexOf("\n\n");
+  }
+
+  return { messages, rest };
 }
 
 function parseSseMessage(rawMessage: string): { event: string; data: any } | null {
@@ -955,14 +1008,14 @@ Usage:
   ${cliCommand} [--base-url URL] session:get <sessionId>
   ${cliCommand} [--base-url URL] send <sessionId> <text> [--model MODEL] [--create-if-missing]
   ${cliCommand} [--base-url URL] events <sessionId> [--since N] [--limit N] [--json]
-  ${cliCommand} [--base-url URL] stream <sessionId>
+  ${cliCommand} [--base-url URL] stream <sessionId> [--auto-approve]
   ${cliCommand} [--base-url URL] cancel <sessionId>
   ${cliCommand} [--base-url URL] approve <sessionId> <stepIndex> [--scope once|conversation]
   ${cliCommand} [--base-url URL] export <sessionId>
   ${cliCommand} [--base-url URL] delete <sessionId>
-  ${cliCommand} [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
-  ${cliCommand} [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
-  ${cliCommand} [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing]
+  ${cliCommand} [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing] [--auto-approve]
+  ${cliCommand} [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing] [--auto-approve]
+  ${cliCommand} [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing] [--auto-approve]
 `;
   process.stdout.write(help.trimStart());
 }

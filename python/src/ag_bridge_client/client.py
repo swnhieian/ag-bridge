@@ -3,7 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
-import time
 from typing import Any, Iterator
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -247,34 +246,15 @@ class BridgeClient:
         self.send_message(active_session_id, text, model=model)
 
         all_events: list[JsonDict] = []
-        approval_required = False
-        error_message: str | None = None
+        for message in self.stream_events(active_session_id, since=since):
+            if message.event != "event":
+                continue
 
-        while True:
-            events = self.get_events(active_session_id, since=since)
-            if events:
-                all_events.extend(events)
-                since = int(events[-1]["seq"])
+            event = message.data
+            all_events.append(event)
+            event_type = str(event.get("type", ""))
 
-            for event in events:
-                event_type = str(event.get("type", ""))
-                if event_type == "cascade.approval.needed":
-                    approval_required = True
-                    break
-                if event_type == "cascade.error":
-                    error_message = str(event.get("data", {}).get("message", "Unknown error"))
-                    break
-                if event_type == "cascade.done":
-                    snapshot = self.get_session(active_session_id)
-                    return {
-                        "session": snapshot,
-                        "events": all_events,
-                        "text": snapshot.get("latestText", ""),
-                        "thinking": snapshot.get("latestThinking", ""),
-                        "approval_required": False,
-                    }
-
-            if approval_required:
+            if event_type == "cascade.approval.needed":
                 snapshot = self.get_session(active_session_id)
                 return {
                     "session": snapshot,
@@ -284,10 +264,20 @@ class BridgeClient:
                     "approval_required": True,
                 }
 
-            if error_message is not None:
-                raise BridgeClientError(error_message)
+            if event_type == "cascade.error":
+                raise BridgeClientError(str(event.get("data", {}).get("message", "Unknown error")))
 
-            time.sleep(poll_interval)
+            if event_type == "cascade.done":
+                snapshot = self.get_session(active_session_id)
+                return {
+                    "session": snapshot,
+                    "events": all_events,
+                    "text": snapshot.get("latestText", ""),
+                    "thinking": snapshot.get("latestThinking", ""),
+                    "approval_required": False,
+                }
+
+        raise BridgeClientError("SSE stream closed before the turn reached a terminal event.")
 
     def _request_json(self, method: str, path: str, body: JsonDict | None = None) -> JsonDict:
         request = Request(

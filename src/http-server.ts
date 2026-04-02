@@ -353,6 +353,8 @@ export class BridgeHttpServer {
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
     });
+    res.flushHeaders?.();
+    res.socket?.setNoDelay(true);
 
     this.writeSse(res, "ready", { session: session.getSnapshot() });
     for (const event of session.getEvents(since)) {
