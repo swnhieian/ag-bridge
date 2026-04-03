@@ -505,6 +505,41 @@ export class BridgeSession extends EventEmitter {
     const wrapped = new CascadeStep(step, stepIndex);
     const interactionCase = step.requestedInteraction?.interaction?.case;
     const interactionValue = step.requestedInteraction?.interaction?.value;
+    const inlineFilePermission = (step.step?.value as any)?.filePermissionRequest;
+
+    if (!interactionCase && inlineFilePermission) {
+      const pathUri = String((inlineFilePermission as any)?.absolutePathUri || "");
+      const isDirectory = !!(inlineFilePermission as any)?.isDirectory;
+      return {
+        summary: {
+          stepIndex,
+          approvalType: "file_permission",
+          description: `File Access: ${pathUri}${isDirectory ? " (directory)" : ""}`,
+          autoRun: false,
+          needsApproval: true,
+          filePath: pathUri,
+          isDirectory,
+        },
+        request: {
+          type: "file_permission",
+          description: `File Access: ${pathUri}${isDirectory ? " (directory)" : ""}`,
+          stepIndex,
+          step: wrapped,
+          autoRun: false,
+          needsApproval: true,
+          filePath: pathUri,
+          isDirectory,
+          approve: async (scope = "once") => {
+            await this.cascade.approveFilePermission(
+              stepIndex,
+              pathUri,
+              scope === "conversation" ? PermissionScope.CONVERSATION : PermissionScope.ONCE,
+            );
+          },
+          deny: async () => {},
+        },
+      };
+    }
 
     if (interactionCase === "runCommand") {
       const commandLine = (step.step?.case === "runCommand" ? (step.step.value as any).proposedCommandLine || (step.step.value as any).commandLine : "") || "";
@@ -588,6 +623,109 @@ export class BridgeSession extends EventEmitter {
           url,
           approve: async () => {
             await this.cascade.approveOpenBrowserUrl(stepIndex);
+          },
+          deny: async () => {},
+        },
+      };
+    }
+
+    if (
+      interactionCase === "executeBrowserJavascript"
+      || interactionCase === "captureBrowserScreenshot"
+      || interactionCase === "clickBrowserPixel"
+      || interactionCase === "browserAction"
+      || interactionCase === "openBrowserSetup"
+      || interactionCase === "confirmBrowserSetup"
+    ) {
+      return {
+        summary: {
+          stepIndex,
+          approvalType: "browser_action",
+          description: `Browser Action: ${interactionCase}`,
+          autoRun: false,
+          needsApproval: true,
+        },
+        request: {
+          type: "browser_action",
+          description: `Browser Action: ${interactionCase}`,
+          stepIndex,
+          step: wrapped,
+          autoRun: false,
+          needsApproval: true,
+          approve: async () => {
+            await this.cascade.sendInteraction(stepIndex, interactionCase, interactionValue);
+          },
+          deny: async () => {},
+        },
+      };
+    }
+
+    if (interactionCase === "sendCommandInput") {
+      return {
+        summary: {
+          stepIndex,
+          approvalType: "send_command_input",
+          description: "Send Command Input",
+          autoRun: false,
+          needsApproval: true,
+        },
+        request: {
+          type: "send_command_input",
+          description: "Send Command Input",
+          stepIndex,
+          step: wrapped,
+          autoRun: false,
+          needsApproval: true,
+          approve: async () => {
+            await this.cascade.sendInteraction(stepIndex, interactionCase, interactionValue);
+          },
+          deny: async () => {},
+        },
+      };
+    }
+
+    if (interactionCase === "mcp") {
+      return {
+        summary: {
+          stepIndex,
+          approvalType: "mcp",
+          description: "MCP Tool Interaction",
+          autoRun: false,
+          needsApproval: true,
+        },
+        request: {
+          type: "mcp",
+          description: "MCP Tool Interaction",
+          stepIndex,
+          step: wrapped,
+          autoRun: false,
+          needsApproval: true,
+          approve: async () => {
+            await this.cascade.sendInteraction(stepIndex, interactionCase, interactionValue);
+          },
+          deny: async () => {},
+        },
+      };
+    }
+
+    if (interactionCase) {
+      return {
+        summary: {
+          stepIndex,
+          approvalType: "other",
+          description: `Unknown Interaction: ${interactionCase}`,
+          autoRun: false,
+          needsApproval: true,
+        },
+        request: {
+          type: "other",
+          description: `Unknown Interaction: ${interactionCase}`,
+          stepIndex,
+          step: wrapped,
+          autoRun: false,
+          needsApproval: true,
+          approve: async () => {
+            await this.cascade.sendInteraction(stepIndex, interactionCase, interactionValue);
           },
           deny: async () => {},
         },

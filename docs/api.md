@@ -8,7 +8,12 @@ Default server address:
 
 - `http://127.0.0.1:9464`
 
-The CLI uses the same API via `AG_BRIDGE_URL` or the default base URL above.
+The Node CLI resolves the same API in this order:
+
+- `--base-url`
+- `AG_BRIDGE_URL`
+- workspace discovery via the local bridge registry
+- the default base URL above
 
 ## Concepts
 
@@ -73,6 +78,20 @@ Example response:
 }
 ```
 
+### `GET /ping`
+
+Returns lightweight bridge discovery metadata for local CLI routing.
+
+Example response:
+
+```json
+{
+  "ok": true,
+  "address": "http://127.0.0.1:9464",
+  "workspacePath": "/Users/me/project"
+}
+```
+
 ### `GET /sessions`
 
 Returns all active session snapshots.
@@ -103,6 +122,8 @@ Fields:
 - `model`
   - optional
   - default model for the session
+  - supports names like `claude-4-sonnet`, `google-gemini-2-5-pro`, `auto`, `recommended`
+  - also supports short aliases like `flash`, `pro`, `pro-low`, `sonnet`, `haiku`, `opus`, and `gpt-oss`
 - `sessionId`
   - optional
   - custom bridge session id
@@ -142,6 +163,8 @@ Fields:
   - `model` or `alias`
 - `name`
   - enum name such as `CLAUDE_4_SONNET` or `AUTO`
+- `aliases`
+  - optional list of friendly short names such as `sonnet` or `flash`
 - `id`
   - numeric enum id
 - `isPremium`
@@ -428,6 +451,7 @@ Response:
       "label": "Claude 4 Sonnet",
       "kind": "model",
       "name": "CLAUDE_4_SONNET",
+      "aliases": ["sonnet"],
       "id": 281,
       "isPremium": true,
       "isRecommended": true,
@@ -493,6 +517,10 @@ Options:
 
 - `--port <number>`
 - `--host <ip-or-hostname>`
+- `--data-dir <path>`
+- `--workspace <path>`
+
+When `--workspace` is omitted, `serve` publishes the current working directory to the discovery registry.
 
 ### `session:create`
 
@@ -529,6 +557,8 @@ node ./bin/ag-bridge.js list-models --workspace /Users/me/project
 node ./bin/ag-bridge.js list-models --json
 ```
 
+The table output now includes an `ALIAS` column for friendly model names.
+
 ### `session:list`
 
 Lists all active sessions.
@@ -554,6 +584,11 @@ Returns buffered events as JSON.
 Streams live events over SSE and prints them to stdout.
 
 The CLI auto-resumes persisted sessions before streaming.
+
+Useful option:
+
+- `--auto-approve`
+  - automatically approves pending steps with `once` scope and keeps streaming
 
 ### `cancel <sessionId>`
 
@@ -590,6 +625,21 @@ Useful options:
   - override the model for this turn
 - `--workspace <path>`
   - prefer a workspace when creating or resuming
+- `--auto-approve`
+  - automatically approves pending steps with `once` scope and continues the turn
+
+Common friendly model aliases:
+
+- `flash`
+- `flash-thinking`
+- `flash-lite`
+- `pro`
+- `pro-low`
+- `pro-high`
+- `sonnet`
+- `haiku`
+- `opus`
+- `gpt-oss`
 
 ## Python CLI
 

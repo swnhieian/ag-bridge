@@ -46,6 +46,7 @@ export interface AvailableModelSummary {
   kind: "model" | "alias";
   name: string;
   id: number;
+  aliases?: string[];
   isPremium: boolean;
   isRecommended: boolean;
   disabled: boolean;

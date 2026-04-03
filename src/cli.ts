@@ -3,15 +3,17 @@ import process from "node:process";
 import { createInterface } from "node:readline/promises";
 import { Readable } from "node:stream";
 
+import { canonicalizeWorkspacePath, readBridgeRegistryRecords } from "./discovery.js";
 import { BridgeHttpServer } from "./http-server.js";
 import type { AgSessionSummary, AvailableModelSummary, BridgeEvent, ServerStatus, SessionExport, SessionSnapshot } from "./types.js";
 
-const DEFAULT_BASE_URL = process.env.AG_BRIDGE_URL ?? "http://127.0.0.1:9464";
-let baseUrl = DEFAULT_BASE_URL;
+const FALLBACK_BASE_URL = "http://127.0.0.1:9464";
+let baseUrl = process.env.AG_BRIDGE_URL ?? FALLBACK_BASE_URL;
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
-  baseUrl = readFlag(argv, "--base-url") ?? DEFAULT_BASE_URL;
+  const [resolvedCommand] = stripFlag(argv, "--base-url");
+  baseUrl = await resolveCliBaseUrl(argv, resolvedCommand);
   const filteredArgs = stripFlag(argv, "--base-url");
   const [command, ...rest] = filteredArgs;
 
@@ -87,8 +89,9 @@ async function runServe(args: string[]): Promise<void> {
   const port = parseOptionalNumber(readFlag(args, "--port")) ?? 9464;
   const host = readFlag(args, "--host") ?? "127.0.0.1";
   const dataDir = readFlag(args, "--data-dir");
+  const workspacePath = readFlag(args, "--workspace") ?? process.cwd();
 
-  const server = new BridgeHttpServer({ host, port, dataDir });
+  const server = new BridgeHttpServer({ host, port, dataDir, defaultWorkspacePath: workspacePath });
   await server.start();
 
   const status = server.getStatus();
@@ -997,7 +1000,7 @@ function printHelp(): void {
   const cliCommand = getCliInvocation();
   const help = `
 Usage:
-  ${cliCommand} [--base-url URL] serve [--host 127.0.0.1] [--port 9464] [--data-dir PATH]
+  ${cliCommand} [--base-url URL] serve [--host 127.0.0.1] [--port 9464] [--data-dir PATH] [--workspace PATH]
   ${cliCommand} [--base-url URL] status [--json]
   ${cliCommand} [--base-url URL] ag:list [--workspace PATH] [--json]
   ${cliCommand} [--base-url URL] ag:attach <cascadeId> [--workspace PATH]
@@ -1016,6 +1019,12 @@ Usage:
   ${cliCommand} [--base-url URL] chat [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing] [--auto-approve]
   ${cliCommand} [--base-url URL] resume [sessionId] [--last] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing] [--auto-approve]
   ${cliCommand} [--base-url URL] ask <text> [--session ID|--last] [--session-id ID] [--workspace PATH] [--thinking on|off] [--model MODEL] [--create-if-missing] [--auto-approve]
+
+Resolution:
+  --base-url wins first, then AG_BRIDGE_URL, then workspace discovery from the local bridge registry, then ${FALLBACK_BASE_URL}
+
+Friendly model aliases:
+  flash, flash-thinking, flash-lite, pro, pro-low, pro-high, sonnet, sonnet-thinking, haiku, opus, gpt-oss
 `;
   process.stdout.write(help.trimStart());
 }
@@ -1108,11 +1117,11 @@ function printModelTable(models: AvailableModelSummary[]): void {
   }
 
   process.stdout.write(
-    `${pad("LABEL", 30)} ${pad("KIND", 7)} ${pad("NAME", 36)} ${pad("ID", 4)} ${pad("RECOMM", 6)} ${pad("PREM", 4)} ${pad("STATE", 8)} KEY\n`,
+    `${pad("LABEL", 30)} ${pad("KIND", 7)} ${pad("NAME", 36)} ${pad("ALIAS", 18)} ${pad("ID", 4)} ${pad("RECOMM", 6)} ${pad("PREM", 4)} ${pad("STATE", 8)} KEY\n`,
   );
   for (const model of models) {
     process.stdout.write(
-      `${pad(model.label, 30)} ${pad(model.kind, 7)} ${pad(model.name, 36)} ${pad(String(model.id), 4)} ${pad(model.isRecommended ? "yes" : "no", 6)} ${pad(model.isPremium ? "yes" : "no", 4)} ${pad(model.disabled ? "disabled" : "enabled", 8)} ${model.key}\n`,
+      `${pad(model.label, 30)} ${pad(model.kind, 7)} ${pad(model.name, 36)} ${pad((model.aliases ?? []).join(","), 18)} ${pad(String(model.id), 4)} ${pad(model.isRecommended ? "yes" : "no", 6)} ${pad(model.isPremium ? "yes" : "no", 4)} ${pad(model.disabled ? "disabled" : "enabled", 8)} ${model.key}\n`,
     );
   }
 }
@@ -1170,6 +1179,74 @@ function readFlag(args: string[], flag: string): string | undefined {
     return undefined;
   }
   return args[index + 1];
+}
+
+async function resolveCliBaseUrl(argv: string[], command?: string): Promise<string> {
+  const explicitBaseUrl = readFlag(argv, "--base-url");
+  if (explicitBaseUrl) {
+    return explicitBaseUrl;
+  }
+
+  if (process.env.AG_BRIDGE_URL) {
+    return process.env.AG_BRIDGE_URL;
+  }
+
+  if (command === "serve") {
+    return FALLBACK_BASE_URL;
+  }
+
+  const discovered = await resolveWorkspaceBridgeBaseUrl(process.cwd());
+  return discovered ?? FALLBACK_BASE_URL;
+}
+
+async function resolveWorkspaceBridgeBaseUrl(cwd: string): Promise<string | undefined> {
+  const workspacePath = canonicalizeWorkspacePath(cwd);
+  const candidates = readBridgeRegistryRecords()
+    .filter((record) => isWorkspaceMatch(record.workspacePath, workspacePath))
+    .sort((left, right) => right.workspacePath.length - left.workspacePath.length);
+
+  if (candidates.length === 0) {
+    return undefined;
+  }
+
+  const healthyMatches: typeof candidates = [];
+
+  for (const candidate of candidates) {
+    if (await isBridgeHealthy(candidate.baseUrl)) {
+      healthyMatches.push(candidate);
+    }
+  }
+
+  if (healthyMatches.length === 0) {
+    return undefined;
+  }
+
+  const bestMatchLength = healthyMatches[0]?.workspacePath.length ?? 0;
+  const bestMatches = healthyMatches.filter((record) => record.workspacePath.length === bestMatchLength);
+
+  if (bestMatches.length > 1) {
+    throw new Error(
+      `Multiple AG Bridge instances match ${workspacePath}. Use --base-url to choose one explicitly.`,
+    );
+  }
+
+  return bestMatches[0]?.baseUrl;
+}
+
+function isWorkspaceMatch(workspaceRoot: string, cwd: string): boolean {
+  if (cwd === workspaceRoot) {
+    return true;
+  }
+  return cwd.startsWith(`${workspaceRoot}${path.sep}`);
+}
+
+async function isBridgeHealthy(targetBaseUrl: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${targetBaseUrl}/health`);
+    return response.ok;
+  } catch {
+    return false;
+  }
 }
 
 function stripFlag(args: string[], flag: string): string[] {

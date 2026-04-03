@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
+import { createBridgeDiscoveryPublisher, type BridgeDiscoveryPublisher } from "./discovery.js";
 import type { BridgeSession } from "./bridge-session.js";
 import { BridgeRuntime } from "./runtime.js";
 import type { AutoApprovalSettings, ServerStatus, SessionExport, SessionSnapshot } from "./types.js";
@@ -18,15 +19,18 @@ export class BridgeHttpServer {
 
   private readonly portSearchLimit: number;
   private readonly runtime: BridgeRuntime;
+  private readonly defaultWorkspacePath?: string;
   private server?: Server;
   private actualPort?: number;
   private startedAt?: string;
   private switchedPort = false;
+  private discovery?: BridgeDiscoveryPublisher;
 
   constructor(options: HttpServerOptions = {}) {
     this.host = options.host ?? "127.0.0.1";
     this.requestedPort = options.port ?? 9464;
     this.portSearchLimit = Math.max(0, options.portSearchLimit ?? 20);
+    this.defaultWorkspacePath = options.defaultWorkspacePath;
     this.runtime = new BridgeRuntime({
       defaultWorkspacePath: options.defaultWorkspacePath,
       dataDir: options.dataDir,
@@ -47,6 +51,12 @@ export class BridgeHttpServer {
         this.actualPort = resolveBoundPort(server, candidatePort);
         this.startedAt = new Date().toISOString();
         this.switchedPort = candidatePort !== this.requestedPort;
+        this.discovery = createBridgeDiscoveryPublisher({
+          workspacePath: this.defaultWorkspacePath,
+          baseUrl: this.address ?? `http://${this.host}:${this.actualPort}`,
+          startedAt: this.startedAt,
+        });
+        this.discovery?.publish();
         return;
       } catch (error) {
         lastError = error;
@@ -71,6 +81,8 @@ export class BridgeHttpServer {
     this.actualPort = undefined;
     this.startedAt = undefined;
     this.switchedPort = false;
+    this.discovery?.dispose();
+    this.discovery = undefined;
     await new Promise<void>((resolve, reject) => {
       server.close((error) => {
         if (error) {
@@ -171,6 +183,14 @@ export class BridgeHttpServer {
 
       if (method === "GET" && path === "/health") {
         return this.sendJson(res, 200, this.runtime.getHealth());
+      }
+
+      if (method === "GET" && path === "/ping") {
+        return this.sendJson(res, 200, {
+          ok: true,
+          address: this.address ?? null,
+          workspacePath: this.runtime.defaultWorkspacePath ?? null,
+        });
       }
 
       if (method === "GET" && path === "/status") {

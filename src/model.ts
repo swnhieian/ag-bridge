@@ -10,6 +10,23 @@ export interface RequestedModelChoice {
   name: string;
 }
 
+const FRIENDLY_MODEL_NAME_ALIASES: Record<string, string> = {
+  flash: "google-gemini-2-5-flash",
+  "flash-thinking": "google-gemini-2-5-flash-thinking",
+  "flash-tools": "google-gemini-2-5-flash-thinking-tools",
+  "flash-lite": "google-gemini-2-5-flash-lite",
+  pro: "google-gemini-2-5-pro",
+  "pro-low": "google-gemini-riftrunner-thinking-low",
+  "pro-high": "google-gemini-riftrunner-thinking-high",
+  sonnet: "claude-4-5-sonnet",
+  "sonnet-thinking": "claude-4-5-sonnet-thinking",
+  haiku: "claude-4-5-haiku",
+  "haiku-thinking": "claude-4-5-haiku-thinking",
+  opus: "claude-4-opus",
+  "opus-thinking": "claude-4-opus-thinking",
+  "gpt-oss": "openai-gpt-oss-120b-medium",
+};
+
 export function resolveRequestedModel(input?: string): RequestedModelChoice | undefined {
   if (!input) {
     return undefined;
@@ -25,7 +42,7 @@ export function resolveRequestedModel(input?: string): RequestedModelChoice | un
     return resolveRequestedModelById(rawName, explicitKind);
   }
 
-  const normalizedName = normalizeModelName(rawName);
+  const normalizedName = normalizeModelName(resolveFriendlyModelAlias(rawName));
   const alias = resolveEnumName(ModelAlias, normalizedName);
   const model = resolveEnumName(Model, normalizedName);
 
@@ -52,7 +69,7 @@ export function resolveRequestedModel(input?: string): RequestedModelChoice | un
   }
 
   throw new Error(
-    `Unknown model: ${input}. Use names like CLAUDE_4_SONNET, GOOGLE_GEMINI_2_5_PRO, AUTO, or RECOMMENDED.`,
+    `Unknown model: ${input}. Use names like CLAUDE_4_SONNET, GOOGLE_GEMINI_2_5_PRO, AUTO, RECOMMENDED, or short aliases like sonnet, pro, flash, and gpt-oss.`,
   );
 }
 
@@ -78,6 +95,20 @@ export function formatRequestedModel(choice?: RequestedModelChoice): string | un
   return `${choice.kind}:${choice.name}`;
 }
 
+export function getFriendlyModelAliases(kind: RequestedModelChoice["kind"], name: string): string[] {
+  const normalizedName = normalizeModelName(name);
+  return Object.entries(FRIENDLY_MODEL_NAME_ALIASES)
+    .filter(([, target]) => {
+      const normalizedTarget = normalizeModelName(target);
+      if (normalizedTarget !== normalizedName) {
+        return false;
+      }
+      return kind === "model";
+    })
+    .map(([alias]) => alias)
+    .sort();
+}
+
 function splitExplicitKind(input: string): {
   explicitKind?: RequestedModelChoice["kind"];
   rawName: string;
@@ -99,6 +130,11 @@ function splitExplicitKind(input: string): {
   return {
     rawName: input,
   };
+}
+
+function resolveFriendlyModelAlias(input: string): string {
+  const normalized = input.trim().toLowerCase();
+  return FRIENDLY_MODEL_NAME_ALIASES[normalized] ?? input;
 }
 
 function resolveRequestedModelById(

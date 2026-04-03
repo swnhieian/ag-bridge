@@ -8,6 +8,7 @@ import { GetAllCascadeTrajectoriesRequest } from "../vendor/antigravity-client/s
 import type { Launcher } from "../vendor/antigravity-client/src/server/index.js";
 import { toRunStatus } from "../vendor/antigravity-client/src/types.js";
 
+import { getFriendlyModelAliases } from "./model.js";
 import { BridgeSession } from "./bridge-session.js";
 import { BridgePersistenceStore } from "./persistence.js";
 import type {
@@ -38,12 +39,12 @@ export class BridgeRuntime {
   private readonly sessions = new Map<string, BridgeSession>();
   private readonly clients = new Map<string, ManagedClient>();
   private sessionCounter = 0;
-  private readonly defaultWorkspacePath?: string;
+  private readonly configuredDefaultWorkspacePath?: string;
   private readonly store: BridgePersistenceStore;
   private autoApprovalSettings: AutoApprovalSettings = defaultAutoApprovalSettings();
 
   constructor(options: RuntimeOptions = {}) {
-    this.defaultWorkspacePath = options.defaultWorkspacePath;
+    this.configuredDefaultWorkspacePath = options.defaultWorkspacePath;
     this.store = new BridgePersistenceStore(options.dataDir ?? defaultDataDir());
   }
 
@@ -51,9 +52,13 @@ export class BridgeRuntime {
     return this.store.dataDir;
   }
 
+  get defaultWorkspacePath(): string | undefined {
+    return this.configuredDefaultWorkspacePath;
+  }
+
   async createSession(options: SessionCreateOptions = {}): Promise<BridgeSession> {
     const mode = options.mode ?? "connect";
-    const workspacePath = options.workspacePath ?? this.defaultWorkspacePath ?? process.cwd();
+    const workspacePath = options.workspacePath ?? this.configuredDefaultWorkspacePath ?? process.cwd();
     const managedClient = await this.getOrCreateClient(mode, workspacePath);
     const cascade = await managedClient.client.startCascade();
     const id = this.allocateSessionId(options.sessionId);
@@ -111,6 +116,7 @@ export class BridgeRuntime {
             kind: "alias",
             name: model.alias,
             id: model.aliasId,
+            aliases: getFriendlyModelAliases("alias", model.alias),
             isPremium: model.isPremium,
             isRecommended: model.isRecommended,
             disabled: model.disabled,
@@ -123,6 +129,7 @@ export class BridgeRuntime {
           kind: "model",
           name: model.model ?? "UNSPECIFIED",
           id: model.modelId ?? 0,
+          aliases: getFriendlyModelAliases("model", model.model ?? "UNSPECIFIED"),
           isPremium: model.isPremium,
           isRecommended: model.isRecommended,
           disabled: model.disabled,
@@ -142,6 +149,9 @@ export class BridgeRuntime {
   async attachAgSession(cascadeId: string, workspacePath?: string): Promise<BridgeSession> {
     const existing = this.findLiveSessionByCascadeId(cascadeId);
     if (existing) {
+      // Reconcile from history on every re-attach so `/ag-sessions/sync` can
+      // backfill turns that were missed by the reactive stream.
+      await existing.syncFromHistory();
       return existing;
     }
 
